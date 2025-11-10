@@ -34,27 +34,57 @@ export default function AdminDashboard() {
   }, [currentUser, navigate]);
 
   useEffect(() => {
-    // Animate trips when they're started
+    // Animate trips with multi-segment routing and faster speed
     if (demoStep === 'moving' && trips.some((t) => t.status === 'started')) {
+      const speedPerTick = 0.03; // progress delta per tick (faster)
+      const tickMs = 150; // smoother & quicker updates
+
+      const getPositionAlongRoute = (route: [number, number][], progress: number): [number, number] => {
+        if (!route || route.length === 0) return [30.3558, 76.3651];
+        if (route.length === 1) return route[0];
+
+        // Compute segment lengths
+        const segLens = [] as number[];
+        let total = 0;
+        for (let i = 0; i < route.length - 1; i++) {
+          const a = route[i];
+          const b = route[i + 1];
+          const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          segLens.push(d);
+          total += d;
+        }
+        const target = progress * total;
+        let acc = 0;
+        for (let i = 0; i < segLens.length; i++) {
+          const nextAcc = acc + segLens[i];
+          if (target <= nextAcc) {
+            const t = segLens[i] === 0 ? 0 : (target - acc) / segLens[i];
+            const a = route[i];
+            const b = route[i + 1];
+            return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+          }
+          acc = nextAcc;
+        }
+        return route[route.length - 1];
+      };
+
       const interval = setInterval(() => {
         trips.forEach((trip) => {
           if (trip.status === 'started' && trip.progress < 1) {
-            const newProgress = Math.min(trip.progress + 0.01, 1);
-            const [start, end] = trip.route;
-            const lat = start[0] + (end[0] - start[0]) * newProgress;
-            const lng = start[1] + (end[1] - start[1]) * newProgress;
-            updateTripProgress(trip.id, newProgress, [lat, lng]);
+            const newProgress = Math.min(trip.progress + speedPerTick, 1);
+            const pos = getPositionAlongRoute(trip.route, newProgress);
+            updateTripProgress(trip.id, newProgress, pos);
 
             if (newProgress >= 1) {
               setTimeout(() => {
                 completeTrips();
                 clearInterval(interval);
                 setAnimationInterval(null);
-              }, 500);
+              }, 200);
             }
           }
         });
-      }, 250);
+      }, tickMs);
 
       setAnimationInterval(interval);
 
@@ -73,14 +103,13 @@ export default function AdminDashboard() {
   const handleSeed = () => {
     resetDemo();
     seedDemo();
-    toast.success('Demo seeded with 10 students and 3 drivers');
+    toast.success('Demo seeded with 8 students and 3 autos');
   };
 
   const handlePool = () => {
     createPools();
-    toast.success('Created 3 pools (4+4+2)');
+    toast.success('Created 2 pools (4 + 4)');
   };
-
   const handleAssign = () => {
     assignDrivers();
     toast.success('Assigned drivers to all pools');

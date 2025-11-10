@@ -21,11 +21,20 @@ export default function MapPanel({ height = '600px', showControls = true }: MapP
   const mapInstance = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const polylinesRef = useRef<Map<string, L.Polyline>>(new Map());
+  const stopsRef = useRef<Map<string, L.Layer[]>>(new Map());
 
   const hotspots = useAppStore((state) => state.hotspots);
   const students = useAppStore((state) => state.students);
   const drivers = useAppStore((state) => state.drivers);
   const trips = useAppStore((state) => state.trips);
+  const pools = useAppStore((state) => state.pools);
+
+  const getPoolColors = (poolId?: string) => {
+    const idx = poolId ? pools.findIndex((p) => p.id === poolId) : -1;
+    if (idx === 0) return { stroke: 'hsl(var(--primary))', shadow: 'hsl(var(--primary) / 0.35)' };
+    if (idx === 1) return { stroke: 'hsl(var(--secondary))', shadow: 'hsl(var(--secondary) / 0.35)' };
+    return { stroke: 'hsl(var(--accent))', shadow: 'hsl(var(--accent) / 0.35)' };
+  };
 
   // Initialize map
   useEffect(() => {
@@ -93,7 +102,7 @@ export default function MapPanel({ height = '600px', showControls = true }: MapP
       if (!hotspot) return;
 
       const key = `student-${student.id}`;
-      const statusColors = {
+      const statusColors: Record<string, string> = {
         waiting: 'bg-warning',
         pooled: 'bg-primary',
         assigned: 'bg-primary',
@@ -101,14 +110,16 @@ export default function MapPanel({ height = '600px', showControls = true }: MapP
         completed: 'bg-muted',
       };
 
+      const colors = getPoolColors(student.poolId);
+
       const icon = L.divIcon({
         className: 'student-marker',
-        html: `<div class="w-6 h-6 ${statusColors[student.status]} rounded-full border-2 border-background shadow-lg pulse-ring"></div>`,
+        html: `<div class="w-6 h-6 ${statusColors[student.status]} rounded-full border-2 shadow-lg pulse-ring" style="border-color: ${colors.stroke}; box-shadow: 0 0 0 3px ${colors.shadow};"></div>`,
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       });
 
-      const marker = L.marker([hotspot.lat + (Math.random() - 0.5) * 0.0005, hotspot.lng + (Math.random() - 0.5) * 0.0005], { icon })
+      const marker = L.marker([hotspot.lat, hotspot.lng], { icon })
         .bindPopup(`<strong>${student.name}</strong><br/>${student.roll}<br/>Status: ${student.status}`)
         .addTo(mapInstance.current!);
       
@@ -120,7 +131,7 @@ export default function MapPanel({ height = '600px', showControls = true }: MapP
   useEffect(() => {
     if (!mapInstance.current) return;
 
-    // Remove old driver markers and routes
+    // Remove old driver markers
     markersRef.current.forEach((marker, key) => {
       if (key.startsWith('driver-')) {
         marker.remove();
@@ -128,46 +139,74 @@ export default function MapPanel({ height = '600px', showControls = true }: MapP
       }
     });
 
-    polylinesRef.current.forEach((polyline, key) => {
+    // Remove old routes
+    polylinesRef.current.forEach((polyline) => {
       polyline.remove();
-      polylinesRef.current.delete(key);
     });
+    polylinesRef.current.clear();
+
+    // Remove old stop markers
+    stopsRef.current.forEach((layers) => {
+      layers.forEach((layer) => layer.remove());
+    });
+    stopsRef.current.clear();
 
     drivers.forEach((driver) => {
       const key = `driver-${driver.id}`;
-      
-      // Find if this driver has an active trip
-      const trip = trips.find(t => t.driverId === driver.id);
-      const position = trip?.currentPosition || [driver.lat, driver.lng];
+      const trip = trips.find((t) => t.driverId === driver.id);
+      const position = (trip?.currentPosition || [driver.lat, driver.lng]) as [number, number];
 
       const icon = L.divIcon({
         className: 'driver-marker',
         html: `<div class="flex flex-col items-center">
-          <div class="w-8 h-8 bg-secondary rounded-lg border-2 border-primary shadow-lg glow-primary flex items-center justify-center text-xs font-bold">
-            🚗
-          </div>
+          <div class="w-8 h-8 bg-secondary rounded-lg border-2 border-primary shadow-lg glow-primary flex items-center justify-center text-xs font-bold">🚗</div>
           <span class="text-xs text-primary-foreground mt-1 font-mono">${driver.plate}</span>
         </div>`,
         iconSize: [80, 50],
         iconAnchor: [40, 25],
       });
 
-      const marker = L.marker(position as [number, number], { icon })
+      const marker = L.marker(position, { icon })
         .bindPopup(`<strong>${driver.name}</strong><br/>${driver.plate}<br/>Status: ${driver.status}`)
         .addTo(mapInstance.current!);
-      
       markersRef.current.set(key, marker);
 
-      // Draw route if trip exists
       if (trip && trip.route.length > 0) {
+        const colors = getPoolColors(trip.poolId);
         const polyline = L.polyline(trip.route as [number, number][], {
-          color: '#14F4C5',
-          weight: 3,
-          opacity: 0.7,
-          dashArray: '10, 10',
+          color: colors.stroke,
+          weight: 4,
+          opacity: 0.9,
         }).addTo(mapInstance.current!);
-        
         polylinesRef.current.set(`route-${trip.id}`, polyline);
+
+        // Stops: pickup (start), mid-pickup for pool-2, and drop (end)
+        const stops: L.Layer[] = [];
+        const start = trip.route[0] as [number, number];
+        const end = trip.route[trip.route.length - 1] as [number, number];
+        stops.push(
+          L.circleMarker(start, { radius: 5, color: colors.stroke, weight: 2, fillColor: colors.stroke, fillOpacity: 0.9 })
+            .bindTooltip('Pickup', { permanent: false })
+            .addTo(mapInstance.current!)
+        );
+
+        // Mid pickup at Hostel B for pool-2
+        if (trip.poolId === 'pool-2') {
+          const mid = [30.3548, 76.3645] as [number, number];
+          stops.push(
+            L.circleMarker(mid, { radius: 5, color: colors.stroke, weight: 2, fillColor: colors.stroke, fillOpacity: 0.9 })
+              .bindTooltip('Pickup (Hostel B)', { permanent: false })
+              .addTo(mapInstance.current!)
+          );
+        }
+
+        stops.push(
+          L.circleMarker(end, { radius: 5, color: colors.stroke, weight: 2, fillColor: colors.stroke, fillOpacity: 0.9 })
+            .bindTooltip('Drop', { permanent: false })
+            .addTo(mapInstance.current!)
+        );
+
+        stopsRef.current.set(`stops-${trip.id}`, stops);
       }
     });
   }, [drivers, trips]);
