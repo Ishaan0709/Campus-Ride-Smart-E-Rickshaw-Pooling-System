@@ -41,15 +41,12 @@ if (demoStep === 'idle') {
   const [otpCopied, setOtpCopied] = useState(false);
 
   useEffect(() => {
-    // If empty, create the 4-student + 1-auto mini demo for this page only
-    if (pools.length === 0 && students.length === 0) {
-      initStudentOnlyDemo();
-    }
-    // Auto-login Ishaan for demo
-    if (!currentUser || currentUser.role !== 'student') {
-      setCurrentUser({ role: 'student', id: 's1' });
-    }
-  }, [currentUser, pools.length, students.length]);
+  // Auto-login ONLY, do not seed demo here
+  if (!currentUser || currentUser.role !== 'student') {
+    setCurrentUser({ role: 'student', id: 's1' });
+  }
+}, [currentUser]);
+
 
   const currentStudent = students.find((s) => s.id === currentUser?.id);
   const currentPool = currentStudent?.poolId ? pools.find((p) => p.id === currentStudent.poolId) : null;
