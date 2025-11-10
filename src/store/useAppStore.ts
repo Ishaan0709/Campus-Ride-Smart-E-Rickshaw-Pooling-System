@@ -103,8 +103,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const students: Student[] = [
       { id: 's1', name: 'Ishaan Sharma', roll: '102303795', hostel: 'AMRITAM', pickup: 'amritam-hall', drop: 'c-block', status: 'waiting' },
       { id: 's2', name: 'Mehak Arora', roll: '102303801', hostel: 'AMRITAM', pickup: 'amritam-hall', drop: 'c-block', status: 'waiting' },
-      { id: 's3', name: 'Abhiram Singh', roll: '102303812', hostel: 'AMRITAM', pickup: 'amritam-hall', drop: 'c-block', status: 'waiting' },
-      { id: 's4', name: 'Jyotika Mehra', roll: '102303823', hostel: 'AMRITAM', pickup: 'amritam-hall', drop: 'c-block', status: 'waiting' },
+      { id: 's3', name: 'Sunita Jogpal', roll: '102303812', hostel: 'AMRITAM', pickup: 'amritam-hall', drop: 'c-block', status: 'waiting' },
+      { id: 's4', name: 'Abhishek Kansal', roll: '102303823', hostel: 'AMRITAM', pickup: 'amritam-hall', drop: 'c-block', status: 'waiting' },
       { id: 's5', name: 'Aarav Gupta', roll: '102303834', hostel: 'AMRITAM', pickup: 'amritam-hall', drop: 'venture-lab', status: 'waiting' },
       { id: 's6', name: 'Kabir Malhotra', roll: '102303856', hostel: 'AMRITAM', pickup: 'amritam-hall', drop: 'venture-lab', status: 'waiting' },
       { id: 's7', name: 'Ananya Nanda', roll: '102303867', hostel: 'AMRITAM', pickup: 'amritam-hall', drop: 'venture-lab', status: 'waiting' },
