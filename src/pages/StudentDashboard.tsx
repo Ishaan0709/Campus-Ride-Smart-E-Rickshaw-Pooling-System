@@ -17,16 +17,16 @@ import {
 export default function StudentDashboard() {
   const demoStep = useAppStore(s => s.demoStep);
 
-if (demoStep === 'idle') {
-  return (
-    <div className="p-6 flex flex-col items-center justify-center text-center">
-      <h2 className="text-2xl font-semibold">System Offline</h2>
-      <p className="text-gray-400 mt-2">
-        Please ask the Admin to <span className="font-medium text-white">Seed Data</span> to start the demo.
-      </p>
-    </div>
-  );
-}
+  if (demoStep === 'idle') {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center text-center">
+        <h2 className="text-2xl font-semibold">System Offline</h2>
+        <p className="text-gray-400 mt-2">
+          Please ask the Admin to <span className="font-medium text-white">Seed Data</span> to start the demo.
+        </p>
+      </div>
+    );
+  }
 
   const navigate = useNavigate();
   const currentUser = useAppStore((s) => s.currentUser);
@@ -41,12 +41,10 @@ if (demoStep === 'idle') {
   const [otpCopied, setOtpCopied] = useState(false);
 
   useEffect(() => {
-  // Auto-login ONLY, do not seed demo here
-  if (!currentUser || currentUser.role !== 'student') {
-    setCurrentUser({ role: 'student', id: 's1' });
-  }
-}, [currentUser]);
-
+    if (!currentUser || currentUser.role !== 'student') {
+      setCurrentUser({ role: 'student', id: 's1' });
+    }
+  }, [currentUser]);
 
   const currentStudent = students.find((s) => s.id === currentUser?.id);
   const currentPool = currentStudent?.poolId ? pools.find((p) => p.id === currentStudent.poolId) : null;
@@ -96,7 +94,7 @@ if (demoStep === 'idle') {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
+    <div className="min-h-screen bg-[#F2EDEE] p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -233,7 +231,6 @@ if (demoStep === 'idle') {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="lg:col-span-2">
             <div className="glass-strong rounded-2xl p-6">
               <h2 className="text-xl font-semibold mb-4">Live Tracking</h2>
-              {/* Show ONLY my pool (4 students + assigned auto) */}
               <MapPanel height="500px" filterPoolId={currentPool?.id} />
             </div>
           </motion.div>

@@ -34,17 +34,16 @@ export default function AdminDashboard() {
   }, [currentUser, navigate]);
 
   useEffect(() => {
-    // Animate trips with multi-segment routing and faster speed
+    // Animate trips with multi-segment routing and faster speed...
     if (demoStep === 'moving' && trips.some((t) => t.status === 'started')) {
-      const speedPerTick = 0.012; // progress delta per tick (slower, smoother movement)
-      const tickMs = 200; // Update every 200ms for visible movement
+      const speedPerTick = 0.012;
+      const tickMs = 200;
 
       const getPositionAlongRoute = (route: [number, number][], progress: number): [number, number] => {
         if (!route || route.length === 0) return [30.3558, 76.3651];
         if (route.length === 1) return route[0];
 
-        // Compute segment lengths
-        const segLens = [] as number[];
+        const segLens: number[] = [];
         let total = 0;
         for (let i = 0; i < route.length - 1; i++) {
           const a = route[i];
@@ -149,7 +148,7 @@ export default function AdminDashboard() {
   const currentStepIndex = getCurrentStepIndex();
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
+    <div className="min-h-screen bg-[#F2EDEE] p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">

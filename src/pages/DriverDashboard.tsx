@@ -10,16 +10,16 @@ import { toast } from 'sonner';
 
 export default function DriverDashboard() {
   const demoStep = useAppStore(s => s.demoStep);
-if (demoStep === 'idle') {
-  return (
-    <div className="p-6 text-center">
-      <h2 className="text-xl font-semibold">System Offline</h2>
-      <p className="text-gray-400">
-        Please ask Admin to Seed Data to start the system.
-      </p>
-    </div>
-  );
-}
+  if (demoStep === 'idle') {
+    return (
+      <div className="p-6 text-center">
+        <h2 className="text-xl font-semibold">System Offline</h2>
+        <p className="text-gray-400">
+          Please ask Admin to Seed Data to start the system.
+        </p>
+      </div>
+    );
+  }
 
   const navigate = useNavigate();
   const currentUser = useAppStore((state) => state.currentUser);
@@ -35,11 +35,10 @@ if (demoStep === 'idle') {
   const [otpInput, setOtpInput] = useState('');
 
   useEffect(() => {
-  if (!currentUser || currentUser.role !== 'driver') {
-    setCurrentUser({ role: 'driver', id: 'd1' });
-  }
-}, [currentUser]);
-
+    if (!currentUser || currentUser.role !== 'driver') {
+      setCurrentUser({ role: 'driver', id: 'd1' });
+    }
+  }, [currentUser]);
 
   const currentDriver = drivers.find((d) => d.id === currentUser?.id);
   const assignedPool = currentDriver?.assignedPoolId ? pools.find((p) => p.id === currentDriver.assignedPoolId) : null;
@@ -94,7 +93,7 @@ if (demoStep === 'idle') {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
+    <div className="min-h-screen bg-[#F2EDEE] p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">

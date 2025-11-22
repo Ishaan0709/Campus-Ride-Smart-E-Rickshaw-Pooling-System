@@ -25,9 +25,9 @@ export default function HeroThapar() {
         </p>
 
         <div className="mt-8 flex justify-center gap-4">
-          {/* CHANGED: Book a Ride -> Demo */}
+          {/* Demo (red) now links to admin page as requested */}
           <a
-            href="/"
+            href="/auth/admin"
             className="px-7 py-3 bg-[#AA0000] rounded-full text-white text-lg font-semibold shadow hover:bg-[#8a0000] transition"
           >
             Demo
@@ -40,7 +40,6 @@ export default function HeroThapar() {
             Student Login
           </a>
 
-          {/* ADDED Driver Login */}
           <a
             href="/auth/driver"
             className="px-7 py-3 rounded-full border border-gray-400 text-gray-700 text-lg font-semibold hover:bg-gray-100 transition"
@@ -49,9 +48,7 @@ export default function HeroThapar() {
           </a>
         </div>
 
-        <p className="mt-6 text-sm text-gray-500">
-          <b>Note:</b> UI-only upgrade. Backend routes remain same.
-        </p>
+        {/* NOTE removed here (per request) */}
       </div>
 
       {/* Info Card */}
