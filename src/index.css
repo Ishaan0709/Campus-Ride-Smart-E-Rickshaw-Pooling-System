@@ -96,3 +96,6 @@ body {
 .auth-btn {
   @apply bg-red-600 text-white rounded-full px-5 py-2 hover:bg-red-700 shadow transition;
 }
+body {
+  @apply bg-[#F7F7F7];
+}
