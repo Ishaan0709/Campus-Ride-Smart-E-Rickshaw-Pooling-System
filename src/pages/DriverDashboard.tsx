@@ -93,7 +93,7 @@ export default function DriverDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#E9E4E4]
+    <div className="min-h-screen bg-[#DCD6D6]
  p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}

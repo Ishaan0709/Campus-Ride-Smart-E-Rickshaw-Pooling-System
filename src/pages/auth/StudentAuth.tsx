@@ -36,8 +36,8 @@ export default function StudentAuth() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#E9E4E4]
-">
+    <div className="min-h-screen flex items-center justify-center bg-[#DCD6D6]
+  p-4">
 
       {/* Back Button */}
       <Button
