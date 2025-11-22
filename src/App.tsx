@@ -37,3 +37,14 @@ const App = () => (
 );
 
 export default App;
+import Footer from "@/components/Footer";
+
+function App() {
+  return (
+    <>
+      {/* your routes / layout */}
+      <RouterProvider router={router} />
+      <Footer />
+    </>
+  );
+}

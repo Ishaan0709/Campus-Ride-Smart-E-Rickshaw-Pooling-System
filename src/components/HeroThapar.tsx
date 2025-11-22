@@ -16,16 +16,15 @@ export default function HeroThapar() {
       {/* Center Content */}
       <div className="relative z-10 text-center max-w-3xl px-6">
         <h1 className="text-5xl font-extrabold text-gray-900 leading-tight">
-          Campus Ride — Smart E-Rickshaw Pooling
+          Thapar Campus Mobility Service
         </h1>
 
         <p className="mt-5 text-lg text-gray-700 leading-relaxed">
-          Faster, safer and greener rides inside Thapar University.
-          Pool with classmates, track rides in real time & verify with OTP.
+          A secure, efficient and eco-friendly transportation service inside Thapar University.
+          Real-time tracking, student verification & intelligent pooling.
         </p>
 
         <div className="mt-8 flex justify-center gap-4">
-          {/* Demo (red) now links to admin page as requested */}
           <a
             href="/auth/admin"
             className="px-7 py-3 bg-[#AA0000] rounded-full text-white text-lg font-semibold shadow hover:bg-[#8a0000] transition"
@@ -47,8 +46,6 @@ export default function HeroThapar() {
             Driver Login
           </a>
         </div>
-
-        {/* NOTE removed here (per request) */}
       </div>
 
       {/* Info Card */}

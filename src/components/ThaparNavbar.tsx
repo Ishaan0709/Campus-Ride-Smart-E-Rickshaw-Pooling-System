@@ -11,40 +11,29 @@ export default function ThaparNavbar() {
           <img
             src="/thapar-logo.png"
             alt="Thapar Logo"
-            className="h-12 w-auto object-contain" /* made logo bigger */
+            className="h-12 w-auto object-contain"
           />
           <div className="text-white font-semibold text-lg leading-tight">
-            Campus Ride
+            Thapar Campus Mobility Service
             <div className="text-[11px] text-white/80">
-              Thapar University — Smart E-Rickshaw
+              Thapar University · TIET Patiala
             </div>
           </div>
         </div>
 
         {/* Navigation Buttons */}
         <div className="flex items-center gap-4">
-          <NavLink
-            to="/auth/student"
-            className="px-5 py-2 rounded-full border border-white/60 text-white text-sm hover:bg-white/10 transition"
-          >
+          <NavLink to="/auth/student" className="px-5 py-2 rounded-full border border-white/60 text-white text-sm hover:bg-white/10 transition">
             Student
           </NavLink>
 
-          <NavLink
-            to="/auth/driver"
-            className="px-5 py-2 rounded-full border border-white/60 text-white text-sm hover:bg-white/10 transition"
-          >
+          <NavLink to="/auth/driver" className="px-5 py-2 rounded-full border border-white/60 text-white text-sm hover:bg-white/10 transition">
             Driver
           </NavLink>
 
-          <NavLink
-            to="/auth/admin"
-            className="px-5 py-2 rounded-full border border-white/60 text-white text-sm hover:bg-white/10 transition"
-          >
+          <NavLink to="/auth/admin" className="px-5 py-2 rounded-full border border-white/60 text-white text-sm hover:bg-white/10 transition">
             Admin
           </NavLink>
-
-          {/* NOTE: removed white Demo from navbar as requested */}
         </div>
       </div>
     </nav>
