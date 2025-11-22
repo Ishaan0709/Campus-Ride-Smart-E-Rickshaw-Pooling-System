@@ -8,50 +8,53 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Liquid Dark Theme - Campus Ride TIET */
-    --background: 222 47% 7%;
-    --foreground: 180 100% 98%;
+    /* ---------------------------------------------------------
+       🔴 THAPAR RED DARK THEME (Option A) – Applied Globally
+    --------------------------------------------------------- */
 
-    --card: 222 40% 8%;
-    --card-foreground: 180 100% 98%;
+    --background: 0 33% 6%;        /* #1A0F0F (reddish-black) */
+    --foreground: 0 20% 95%;
 
-    --popover: 222 45% 9%;
-    --popover-foreground: 180 100% 98%;
+    --card: 0 30% 11%;             /* #2D1616 */
+    --card-foreground: 0 20% 95%;
 
-    --primary: 172 88% 52%;
-    --primary-foreground: 222 47% 11%;
+    --popover: 0 28% 12%;
+    --popover-foreground: 0 20% 95%;
 
-    --secondary: 258 85% 56%;
-    --secondary-foreground: 180 100% 98%;
+    --primary: 0 100% 27%;         /* #8A0000 */
+    --primary-foreground: 0 20% 95%;
 
-    --muted: 222 35% 15%;
-    --muted-foreground: 180 20% 70%;
+    --secondary: 0 60% 20%;
+    --secondary-foreground: 0 20% 95%;
 
-    --accent: 172 88% 52%;
-    --accent-foreground: 222 47% 11%;
+    --muted: 0 30% 15%;
+    --muted-foreground: 0 20% 75%;
+
+    --accent: 0 100% 27%;
+    --accent-foreground: 0 20% 95%;
 
     --success: 152 69% 58%;
     --warning: 32 95% 63%;
     --danger: 350 89% 60%;
 
     --destructive: 350 89% 60%;
-    --destructive-foreground: 180 100% 98%;
+    --destructive-foreground: 0 20% 95%;
 
-    --border: 222 30% 18%;
-    --input: 222 30% 14%;
-    --ring: 172 88% 52%;
+    --border: 0 35% 28%;           /* #593333 */
+    --input: 0 28% 20%;
+    --ring: 0 100% 27%;
 
     --radius: 1rem;
 
     /* Glass effect colors */
     --glass-bg: 0 0% 100%;
     --glass-border: 0 0% 100%;
-    --glass-bg-opacity: 0.05;
-    --glass-border-opacity: 0.1;
+    --glass-bg-opacity: 0.03;      /* lowered for subtle red-glass */
+    --glass-border-opacity: 0.08;
 
     /* Glow colors */
-    --glow-primary: 172 88% 52%;
-    --glow-secondary: 258 85% 56%;
+    --glow-primary: 0 100% 27%;    /* red glow */
+    --glow-secondary: 172 88% 52%;
   }
 }
 
@@ -65,23 +68,25 @@ All colors MUST be HSL.
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 
-  /* Glass morphism utilities */
+  /* ---------------------------------------------------------
+     🔴 GLASS MORPHISM (RED DARK THEME)
+  --------------------------------------------------------- */
   .glass {
-    background: hsla(var(--glass-bg), var(--glass-bg-opacity));
+    background: rgba(90, 0, 0, 0.18);   /* deep red-dark glass */
     backdrop-filter: blur(16px);
     border: 1px solid hsla(var(--glass-border), var(--glass-border-opacity));
   }
 
   .glass-strong {
-    background: hsla(var(--glass-bg), 0.08);
+    background: rgba(90, 0, 0, 0.28);
     backdrop-filter: blur(24px);
     border: 1px solid hsla(var(--glass-border), 0.15);
   }
 
   /* Glow effects */
   .glow-primary {
-    box-shadow: 0 0 20px hsla(var(--glow-primary), 0.3),
-                0 0 40px hsla(var(--glow-primary), 0.15);
+    box-shadow: 0 0 20px hsla(var(--glow-primary), 0.35),
+                0 0 40px hsla(var(--glow-primary), 0.2);
   }
 
   .glow-secondary {
@@ -96,86 +101,44 @@ All colors MUST be HSL.
                  0 0 30px hsla(var(--glow-primary), 0.2);
   }
 
-  /* Pulse animation for markers */
+  /* Pulse animation */
   @keyframes pulse-ring {
-    0% {
-      transform: scale(0.95);
-      opacity: 1;
-    }
-    50% {
-      transform: scale(1.05);
-      opacity: 0.7;
-    }
-    100% {
-      transform: scale(0.95);
-      opacity: 1;
-    }
+    0% { transform: scale(0.95); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.7; }
+    100% { transform: scale(0.95); opacity: 1; }
   }
 
   .pulse-ring {
     animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
-  /* Leaflet overrides for dark theme */
+  /* Leaflet overrides (dark) */
   .leaflet-container {
     background: hsl(var(--background));
     font-family: inherit;
   }
 
   .leaflet-popup-content-wrapper {
-    background: hsla(var(--glass-bg), 0.95);
+    background: rgba(90, 0, 0, 0.25);
     backdrop-filter: blur(16px);
-    border: 1px solid hsla(var(--glass-border), 0.2);
+    border: 1px solid rgba(255,255,255,0.15);
     color: hsl(var(--foreground));
     border-radius: 0.75rem;
   }
 
   .leaflet-popup-tip {
-    background: hsla(var(--glass-bg), 0.95);
+    background: rgba(90, 0, 0, 0.25);
   }
 }
-/* --- FORCE LIGHT THEME FOR AUTH PAGES --- */
 
-.auth-page {
-  background: linear-gradient(to bottom, #f7f7f7, #ececec) !important;
-}
-
-.auth-page * {
-  color: #222 !important;
-}
-
-.auth-card {
-  background: #ffffff !important;
-  border: 1px solid #ffd5d5 !important;
-  border-radius: 16px !important;
-  box-shadow: 0px 10px 30px rgba(0,0,0,0.08) !important;
-}
-
-.auth-title {
-  color: #8A0000 !important;
-  font-weight: 700 !important;
-}
-
+/* ---------------------------------------------------------
+   ⚠ REMOVE FORCE-LIGHT THEME FROM AUTH PAGES
+   (Since we are fully dark now)
+--------------------------------------------------------- */
+.auth-page,
+.auth-page *,
+.auth-card,
+.auth-title,
 .auth-btn {
-  background: #8A0000 !important;
-  color: white !important;
-  border-radius: 9999px !important;
-  padding: 12px !important;
+  all: unset !important;
 }
-/* Better dark borders */
-.border-dark {
-  border-color: #3A3A3A !important;
-}
-
-/* Glass subtle */
-.glass {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(14px);
-}
-
-/* Glass strong */
-.glass-strong {
-  background: rgba(255, 255, 255, 0.09);
-  backdrop-filter: blur(22px);
-}
-
