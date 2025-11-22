@@ -1,44 +1,59 @@
 import React from "react";
-import { NavLink } from "@/components/NavLink"; // your helper — unchanged
-// If your project uses base path alias `@`, this import matches your codebase.
+import { NavLink } from "@/components/NavLink";
 
 export default function ThaparNavbar() {
   return (
-    <nav className="w-full bg-white/90 backdrop-blur sticky top-0 z-40 border-b">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Left: logo + title */}
-          <div className="flex items-center gap-3">
-            <img
-              src="/thapar-logo.png"
-              alt="Thapar Logo"
-              className="h-10 w-10 object-contain rounded"
-            />
-            <div>
-              <div className="text-xl font-semibold text-[#AA0000]">Campus Ride</div>
-              <div className="text-xs text-gray-500 -mt-1">Thapar University — Smart E-Rickshaw</div>
+    <nav className="w-full fixed top-0 left-0 z-50 bg-[#AA0000]/80 backdrop-blur-md shadow-sm">
+      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+
+        {/* Logo */}
+        <div className="flex items-center gap-3">
+          <img
+            src="/thapar-logo.png"
+            alt="Thapar Logo"
+            className="h-10 rounded-md shadow"
+          />
+          <div className="text-white font-semibold text-lg">
+            Campus Ride
+            <div className="text-[11px] text-white/80 -mt-1">
+              Thapar University — Smart E-Rickshaw
             </div>
           </div>
-
-          {/* Right: actions */}
-          <div className="flex items-center gap-3">
-            <NavLink
-              to="/"
-              className="inline-block px-4 py-2 rounded-md bg-[#AA0000] text-white font-medium shadow hover:opacity-95 transition"
-              activeClassName="ring-2 ring-[#AA0000]/30"
-            >
-              Book a Ride
-            </NavLink>
-
-            <NavLink
-              to="/auth/driver"
-              className="inline-block px-3 py-2 rounded-md border border-gray-200 text-sm text-gray-700 hover:shadow-sm transition"
-              activeClassName="bg-gray-100"
-            >
-              Driver Login
-            </NavLink>
-          </div>
         </div>
+
+        {/* Buttons */}
+        <div className="flex items-center gap-4">
+
+          <NavLink
+            to="/auth/student"
+            className="px-4 py-2 text-white/90 hover:text-white transition text-sm font-medium"
+          >
+            Student Login
+          </NavLink>
+
+          <NavLink
+            to="/auth/driver"
+            className="px-4 py-2 text-white/90 hover:text-white transition text-sm font-medium"
+          >
+            Driver Login
+          </NavLink>
+
+          <NavLink
+            to="/auth/admin"
+            className="px-4 py-2 text-white/90 hover:text-white transition text-sm font-medium"
+          >
+            Admin
+          </NavLink>
+
+          <NavLink
+            to="/"
+            className="px-5 py-2 rounded-full bg-white text-[#AA0000] font-semibold shadow hover:bg-gray-100 transition"
+          >
+            Book a Ride
+          </NavLink>
+
+        </div>
+
       </div>
     </nav>
   );
