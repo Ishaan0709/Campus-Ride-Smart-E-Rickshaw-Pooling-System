@@ -3,27 +3,21 @@ import React from "react";
 export default function HeroThapar() {
   return (
     <header className="relative h-[85vh] flex items-center justify-start bg-white">
-
       {/* Background Image */}
       <div
         className="absolute inset-0 bg-cover bg-center"
         style={{ backgroundImage: "url('/thapar.jpg')" }}
       />
 
-      {/* Soft fade at bottom only */}
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-white/20" />
-
-      {/* LEFT ALIGNED CONTENT - UPDATED FOR BETTER READABILITY */}
-      <div className="relative z-10 max-w-3xl px-16 text-left 
-        bg-white/20 backdrop-blur-md rounded-2xl shadow-md p-6 mx-4">
-
-        <h1 className="text-5xl font-extrabold text-gray-900 leading-tight drop-shadow-lg">
+      {/* LEFT ALIGNED CONTENT – no box, only white text */}
+      <div className="relative z-10 max-w-3xl px-16 text-left">
+        <h1 className="text-5xl font-extrabold text-white leading-tight drop-shadow-lg">
           Thapar Campus Mobility Service
         </h1>
 
-        <p className="mt-5 text-lg text-gray-800 leading-relaxed max-w-xl drop-shadow">
-          A secure, efficient and eco-friendly transportation service inside Thapar University.
-          Real-time tracking, student verification & intelligent pooling.
+        <p className="mt-5 text-lg text-white/90 leading-relaxed max-w-xl drop-shadow-md">
+          A secure, efficient and eco-friendly transportation service inside Thapar
+          University. Real-time tracking, student verification & intelligent pooling.
         </p>
 
         <div className="mt-8 flex justify-start gap-4">
@@ -36,14 +30,14 @@ export default function HeroThapar() {
 
           <a
             href="/auth/student"
-            className="px-7 py-3 rounded-full border border-gray-400 text-gray-700 text-lg font-semibold hover:bg-gray-100 transition"
+            className="px-7 py-3 rounded-full border border-white/70 text-white text-lg font-semibold bg-white/5 hover:bg-white/15 transition"
           >
             Student Login
           </a>
 
           <a
             href="/auth/driver"
-            className="px-7 py-3 rounded-full border border-gray-400 text-gray-700 text-lg font-semibold hover:bg-gray-100 transition"
+            className="px-7 py-3 rounded-full border border-white/70 text-white text-lg font-semibold bg-white/5 hover:bg-white/15 transition"
           >
             Driver Login
           </a>
