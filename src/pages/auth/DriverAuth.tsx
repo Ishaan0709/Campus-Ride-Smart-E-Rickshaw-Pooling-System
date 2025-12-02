@@ -1,46 +1,84 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useAppStore } from '@/store/useAppStore';
-import { toast } from 'sonner';
+// src/pages/auth/DriverAuth.tsx
+
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+
+import { useAuth } from "@/store/AuthContext";   // 👈 Firebase Auth context
+import { db, auth } from "@/lib/firebase";       // 👈 Firebase instances
+import { doc, setDoc } from "firebase/firestore";
 
 export default function DriverAuth() {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [plate, setPlate] = useState('');
-  const navigate = useNavigate();
-  const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [plate, setPlate] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const navigate = useNavigate();
+  const { signup, login } = useAuth();          // 👈 from AuthContext
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (isLogin) {
-      if (email && password) {
-        setCurrentUser({ role: 'driver', id: 'd1' });
-        toast.success('Logged in successfully!');
-        navigate('/driver');
-      } else toast.error('Please fill all fields');
-    } else {
-      if (email && password && name && plate) {
-        setCurrentUser({ role: 'driver', id: 'd1' });
-        toast.success('Account created successfully!');
-        navigate('/driver');
-      } else toast.error('Please fill all fields');
+    if (!email || !password || (!isLogin && (!name || !plate))) {
+      toast.error("Please fill all fields");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      if (isLogin) {
+        // 🔐 Existing driver sign in
+        await login(email, password);
+        toast.success("Logged in successfully!");
+      } else {
+        // 🆕 New driver sign up
+        await signup(email, password, "driver"); // role = "driver"
+
+        const uid = auth.currentUser?.uid;
+        if (uid) {
+          // Save driver-specific details in a separate collection
+          await setDoc(doc(db, "drivers", uid), {
+            uid,
+            name,
+            email,
+            plate,
+            role: "driver",
+            createdAt: new Date().toISOString(),
+          });
+        }
+
+        toast.success("Driver account created successfully!");
+      }
+
+      navigate("/driver"); // Go to driver dashboard
+    } catch (err: any) {
+      console.error(err);
+      const message =
+        err?.code === "auth/wrong-password"
+          ? "Incorrect password"
+          : err?.code === "auth/user-not-found"
+          ? "No driver found with this email"
+          : err?.message || "Driver authentication failed";
+      toast.error(message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#E6DADA] p-4">
-
       <Button
         variant="ghost"
-        onClick={() => navigate('/')}
+        onClick={() => navigate("/")}
         className="absolute top-4 left-4 text-gray-600 hover:text-black"
       >
         <ArrowLeft className="w-4 h-4 mr-2" />
@@ -54,7 +92,6 @@ export default function DriverAuth() {
         className="w-full max-w-md"
       >
         <div className="rounded-3xl p-8 bg-white shadow-2xl border border-red-200">
-
           <div className="flex items-center justify-center mb-6">
             <div className="p-4 rounded-2xl bg-[#AA0000]/15 text-4xl">
               🚗
@@ -120,9 +157,10 @@ export default function DriverAuth() {
 
             <Button
               type="submit"
+              disabled={loading}
               className="w-full bg-[#AA0000] hover:bg-[#8A0000] text-white font-semibold py-3 rounded-xl"
             >
-              {isLogin ? "Sign In" : "Sign Up"}
+              {loading ? "Please wait..." : isLogin ? "Sign In" : "Sign Up"}
             </Button>
           </form>
 
