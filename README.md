@@ -1,73 +1,279 @@
-# Welcome to your Lovable project
+🚖 Campus Ride – Smart E-Rickshaw Pooling System
+(Software Engineering Project)
 
-## Project info
+Live Website: https://campus-ride-smart-e-rickshaw-poolin-rose.vercel.app/
 
-**URL**: https://lovable.dev/projects/0ff33ae8-601d-4016-ab8c-1d44969a10dc
+GitHub Repository: https://github.com/Ishaan0709/Campus-Ride-Smart-E-Rickshaw-Pooling-System
 
-## How can I edit this code?
+📌 Overview
 
-There are several ways of editing your application.
+Campus Ride is a smart, eco-friendly, OTP-verified E-Rickshaw pooling system built for university campuses.
+It enables students, drivers, and administrators to seamlessly coordinate transportation through:
 
-**Use Lovable**
+Real-time ride requests
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/0ff33ae8-601d-4016-ab8c-1d44969a10dc) and start prompting.
+Intelligent ride pooling
 
-Changes made via Lovable will be committed automatically to this repo.
+Live driver tracking
 
-**Use your preferred IDE**
+OTP-based boarding verification
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+Role-based authentication
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+Smooth UI/UX for different user types
 
-Follow these steps:
+This project was developed as a Software Engineering (SE) course project, following proper SDLC guidelines, documentation (SRS, DFD, UML), testing, and deployment.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+🎯 Problem Statement
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+Large campuses like Thapar University face challenges:
 
-# Step 3: Install the necessary dependencies.
-npm i
+Long walking distances between blocks
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+No organized real-time pooling system
+
+Difficulty locating available E-rickshaws
+
+Safety concerns without OTP verification
+
+Lack of a unified platform for students & drivers
+
+Campus Ride solves this by offering a centrally managed, ride-pooling system to reduce waiting time, congestion, and environmental impact.
+
+🚀 Key Features
+👨‍🎓 Student Module
+
+Firebase sign-up/login
+
+Personalized dashboard (Name, Roll No., Email)
+
+Book a ride with:
+
+Pickup point
+
+Drop location
+
+Time preference
+
+Pool/Solo mode
+
+Real-time status updates
+
+Track assigned driver live on map
+
+OTP verification system
+
+Ride history & re-booking
+
+Smooth, modern UI with animations
+
+🚗 Driver Module
+
+Firebase sign-up/login
+
+Driver dashboard with:
+
+Availability toggle
+
+New ride requests
+
+Student details & pickup point
+
+OTP verification before ride starts
+
+Live route & trip updates
+
+Daily ride summary
+
+🧑‍💼 Admin Module
+
+Admin authentication
+
+Seed demo data (for presentation)
+
+Ability to:
+
+View all students
+
+View all drivers
+
+Reset simulation
+
+(Admin demo mode does not affect Student real experience.)
+
+🗺 Live Mapping & UI
+
+Beautiful Leaflet-based map
+
+Glassmorphism UI theme
+
+Route paths & live movement
+
+Auto icons + pickup/drop markers
+
+🛠 Tech Stack
+Frontend
+
+React (Vite + TypeScript)
+
+Zustand (global state management)
+
+Tailwind CSS
+
+ShadCN UI Components
+
+Framer Motion animations
+
+Leaflet JS (maps)
+
+Backend
+
+Firebase Authentication
+
+Firebase Firestore (user metadata)
+
+Firestore collections:
+
+/users
+
+/students
+
+/drivers
+
+/rides
+
+/locations
+
+Deployment
+
+Vercel Hosting
+
+📁 Project Structure
+src/
+ ├── components/
+ │    ├── MapPanel.tsx
+ │    └── UI components
+ ├── pages/
+ │    ├── auth/
+ │    │    ├── StudentAuth.tsx
+ │    │    ├── DriverAuth.tsx
+ │    │    └── AdminAuth.tsx
+ │    ├── StudentDashboard.tsx
+ │    ├── DriverDashboard.tsx
+ │    └── AdminDashboard.tsx
+ ├── store/
+ │    ├── useAppStore.ts
+ │    └── AuthContext.tsx (firebase)
+ ├── lib/
+ │    └── firebase.ts
+ ├── App.tsx
+ └── main.tsx
+
+🔐 Role-Based Authentication
+
+Each signup stores:
+
+users/{uid}:
+  name
+  email
+  role: "student" | "driver" | "admin"
+  createdAt
+
+
+Protected routes:
+
+/student → Students only
+
+/driver → Drivers only
+
+/admin → Admin only
+
+If a student manually types /driver → redirected safely.
+
+🧠 Intelligent Pooling Flow
+
+Student requests ride
+
+System searches active drivers
+
+Pool formed with matching routes
+
+Driver receives request
+
+OTP verification at pickup
+
+Live ride tracking
+
+Trip completion + history logging
+
+🧪 Software Engineering Document Support
+
+This project includes (or supports):
+
+SRS Document
+
+DFD Level 0, 1, 2
+
+Use Case Diagrams
+
+ER Diagram
+
+Activity & Sequence Diagrams
+
+Functional & Non-Functional Requirements
+
+Testing Scenarios & Test Cases
+
+🧭 How to Run Locally
+1. Clone the repository
+git clone https://github.com/Ishaan0709/Campus-Ride-Smart-E-Rickshaw-Pooling-System.git
+cd Campus-Ride-Smart-E-Rickshaw-Pooling-System
+
+2. Install packages
+npm install
+
+3. Setup Firebase environment
+
+Create .env:
+
+VITE_FIREBASE_API_KEY=xxxx
+VITE_FIREBASE_AUTH_DOMAIN=xxxx
+VITE_FIREBASE_PROJECT_ID=xxxx
+...
+
+4. Run
 npm run dev
-```
 
-**Edit a file directly in GitHub**
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+App will run at:
 
-**Use GitHub Codespaces**
+http://localhost:5173
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+📌 Future Improvements
 
-## What technologies are used for this project?
+Real-time driver location from GPS
 
-This project is built with:
+Machine-learning based route pooling
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Integrated wallet + payments
 
-## How can I deploy this project?
+Panic button / safety monitoring
 
-Simply open [Lovable](https://lovable.dev/projects/0ff33ae8-601d-4016-ab8c-1d44969a10dc) and click on Share -> Publish.
+Admin analytics dashboard
 
-## Can I connect a custom domain to my Lovable project?
+QR boarding verification
 
-Yes, you can!
+Push notifications (FCM)
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+👨‍💻 Contributors
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Team Project (Software Engineering Course)
+
+Designed, developed, and maintained by:
+
+Your Name(s)
+
+⭐ Support
+
+If you like this project, feel free to ⭐ star the repo!
+It helps a lot and motivates further development ❤️
