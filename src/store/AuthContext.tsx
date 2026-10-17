@@ -4,12 +4,11 @@ import {
   signOut,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  User
+  User,
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { auth, createUserDocument, getUserData, UserRole } from "@/lib/firebase";
 
-type Role = "student" | "driver" | "admin";
+type Role = UserRole;
 
 interface AppUser {
   uid: string;
@@ -27,9 +26,9 @@ interface AuthContextType {
     email: string,
     password: string,
     role: Role,
-    profile?: { name?: string; roll?: string; plate?: string }
+    profile?: { name?: string; roll?: string; plate?: string; hostel?: string }
   ) => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, expectedRole?: Role) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -39,7 +38,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Listen to login/logout automatically
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
       if (!firebaseUser) {
@@ -48,22 +46,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
-      const ref = doc(db, "users", firebaseUser.uid);
-      const snap = await getDoc(ref);
-      const data = snap.data() || {};
-
-      const role = (data.role || "student") as Role;
-
-      setUser({
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        role,
-        name: data.name ?? null,
-        roll: data.roll ?? null,
-        plate: data.plate ?? null,
-      });
-
-      setLoading(false);
+      try {
+        const data = await getUserData(firebaseUser.uid);
+        setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          role: data?.role || "student",
+          name: data?.name ?? null,
+          roll: data?.roll ?? null,
+          plate: data?.plate ?? data?.vehicleNumber ?? null,
+        });
+      } catch (error) {
+        console.error("Failed to load the signed-in profile:", error);
+        setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          role: "student",
+        });
+      } finally {
+        setLoading(false);
+      }
     });
 
     return unsub;
@@ -77,18 +79,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   ) => {
     const userCred = await createUserWithEmailAndPassword(auth, email, password);
 
-    await setDoc(doc(db, "users", userCred.user.uid), {
-      email,
-      role,
-      ...(profile?.name && { name: profile.name }),
-      ...(profile?.roll && { roll: profile.roll }),
-      ...(profile?.plate && { plate: profile.plate }),
-      createdAt: new Date().toISOString(),
-    });
+    try {
+      await createUserDocument(userCred.user, {
+        email,
+        role,
+        name: profile?.name || "",
+        roll: profile?.roll || "",
+        plate: profile?.plate || "",
+        vehicleNumber: profile?.plate || "",
+        hostel: profile?.hostel || "",
+      });
+    } catch (error) {
+      await userCred.user.delete().catch(() => undefined);
+      throw error;
+    }
   };
 
-  const login = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
+  const login = async (email: string, password: string, expectedRole?: Role) => {
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+
+    if (!expectedRole) return;
+
+    const profile = await getUserData(credential.user.uid);
+    if (profile?.role && profile.role !== expectedRole) {
+      await signOut(auth);
+      throw new Error(
+        `This account is a ${profile.role} account. Use the ${profile.role} portal.`
+      );
+    }
   };
 
   const logout = async () => {
@@ -97,7 +115,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <AuthContext.Provider value={{ user, loading, signup, login, logout }}>
-      {!loading && children}
+      {loading ? (
+        <div className="min-h-screen flex items-center justify-center bg-[#F7F7F7] text-gray-700">
+          Connecting to Campus Ride...
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 };

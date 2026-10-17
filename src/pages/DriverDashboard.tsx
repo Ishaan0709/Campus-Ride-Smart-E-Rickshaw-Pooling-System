@@ -13,6 +13,33 @@ import { signOut } from "firebase/auth";
 import { getUserData, updateUserProfile } from "@/lib/firebase";
 import { useAppStore } from "@/store/useAppStore";
 
+interface RideRequest {
+  id: string;
+  studentName: string;
+  roll: string;
+  pickup: string;
+  drop: string;
+  eta: number;
+  seats: number;
+  mode: "solo" | "pool";
+  fare: number;
+}
+
+interface ActiveDriverRide extends RideRequest {
+  otp: string;
+  driverAssignedAt: Date;
+}
+
+interface TodayRide {
+  id: string;
+  time: string;
+  pickup: string;
+  drop: string;
+  students: number;
+  fare: number;
+  status: string;
+}
+
 export default function DriverDashboard() {
   const navigate = useNavigate();
   const { currentUser, setCurrentUser } = useAppStore();
@@ -23,7 +50,7 @@ export default function DriverDashboard() {
   const [otpInput, setOtpInput] = useState("");
   const [rideStage, setRideStage] = useState<"waiting" | "assigned" | "enroute" | "completed">("waiting");
   const [showNotification, setShowNotification] = useState(true);
-  const [activeRide, setActiveRide] = useState<any>(null);
+  const [activeRide, setActiveRide] = useState<ActiveDriverRide | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileData, setProfileData] = useState({
     name: "",
@@ -46,7 +73,7 @@ export default function DriverDashboard() {
   });
   
   // New ride request - fixed at ₹40 for driver
-  const [rideRequest, setRideRequest] = useState<any>({
+  const [rideRequest, setRideRequest] = useState<RideRequest>({
     id: "req_001",
     studentName: "Rohan Sharma",
     roll: "102303795",
@@ -59,7 +86,7 @@ export default function DriverDashboard() {
   });
   
   // Today's rides history - updated to ₹40 per ride
-  const [todayRides, setTodayRides] = useState<any[]>([
+  const [todayRides, setTodayRides] = useState<TodayRide[]>([
     {
       id: "1",
       time: "09:15 AM",
@@ -110,6 +137,13 @@ export default function DriverDashboard() {
         }
 
         const userData = await getUserData(user.uid);
+
+        if (userData?.role && userData.role !== "driver") {
+          await signOut(auth);
+          toast.error("This account is not a driver account");
+          navigate("/auth/driver");
+          return;
+        }
         
         if (userData) {
           setCurrentUser({
@@ -125,8 +159,14 @@ export default function DriverDashboard() {
             licenseNumber: userData.licenseNumber || "",
           });
           
-          // Set driver status from Firestore or default to available
-          setStatus(userData.status || "available");
+          const savedStatus = userData.status;
+          if (
+            savedStatus === "available" ||
+            savedStatus === "on_ride" ||
+            savedStatus === "offline"
+          ) {
+            setStatus(savedStatus);
+          }
         } else {
           // Driver doesn't exist in Firestore
           const basicUser = {
@@ -279,6 +319,7 @@ export default function DriverDashboard() {
   };
 
   const handleEndRide = () => {
+    if (!activeRide) return;
     setRideStage("completed");
     
     // Add to today's rides

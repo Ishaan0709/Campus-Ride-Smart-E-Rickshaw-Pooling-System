@@ -53,8 +53,25 @@ export interface Trip {
   status: 'pending' | 'started' | 'completed';
 }
 
+export interface SessionUser {
+  role: 'student' | 'driver' | 'admin';
+  id?: string;
+  uid?: string;
+  name?: string | null;
+  roll?: string | null;
+  email?: string | null;
+  hostel?: string | null;
+  plate?: string | null;
+  vehicleNumber?: string;
+  phone?: string;
+  licenseNumber?: string;
+  status?: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
 interface AppState {
-  currentUser: { role: 'student' | 'driver' | 'admin'; id: string } | null;
+  currentUser: SessionUser | null;
   hotspots: Hotspot[];
   students: Student[];
   drivers: Driver[];
@@ -62,7 +79,7 @@ interface AppState {
   trips: Trip[];
   demoStep: 'idle' | 'seeded' | 'pooled' | 'assigned' | 'verified' | 'moving' | 'completed';
 
-  setCurrentUser: (user: { role: 'student' | 'driver' | 'admin'; id: string } | null) => void;
+  setCurrentUser: (user: SessionUser | null) => void;
 
   seedDemo: () => void;
   createPools: () => void;

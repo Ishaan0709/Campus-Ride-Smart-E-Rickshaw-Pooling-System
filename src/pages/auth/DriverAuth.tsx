@@ -9,9 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
-import { useAuth } from "@/store/AuthContext";   // 👈 Firebase Auth context
-import { db, auth } from "@/lib/firebase";       // 👈 Firebase instances
-import { doc, setDoc } from "firebase/firestore";
+import { useAuth } from "@/store/AuthContext";
+import { authErrorMessage } from "@/lib/firebase";
 
 export default function DriverAuth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -36,39 +35,17 @@ export default function DriverAuth() {
       setLoading(true);
 
       if (isLogin) {
-        // 🔐 Existing driver sign in
-        await login(email, password);
+        await login(email, password, "driver");
         toast.success("Logged in successfully!");
       } else {
-        // 🆕 New driver sign up
-        await signup(email, password, "driver"); // role = "driver"
-
-        const uid = auth.currentUser?.uid;
-        if (uid) {
-          // Save driver-specific details in a separate collection
-          await setDoc(doc(db, "drivers", uid), {
-            uid,
-            name,
-            email,
-            plate,
-            role: "driver",
-            createdAt: new Date().toISOString(),
-          });
-        }
-
+        await signup(email, password, "driver", { name, plate });
         toast.success("Driver account created successfully!");
       }
 
       navigate("/driver"); // Go to driver dashboard
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      const message =
-        err?.code === "auth/wrong-password"
-          ? "Incorrect password"
-          : err?.code === "auth/user-not-found"
-          ? "No driver found with this email"
-          : err?.message || "Driver authentication failed";
-      toast.error(message);
+      toast.error(authErrorMessage(err));
     } finally {
       setLoading(false);
     }

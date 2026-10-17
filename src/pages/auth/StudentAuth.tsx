@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/store/AuthContext";
+import { authErrorMessage } from "@/lib/firebase";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,18 +32,17 @@ export default function StudentAuth() {
       setLoading(true);
 
       if (isLogin) {
-        await login(email, password);
+        await login(email, password, "student");
         toast.success("Logged in as student");
       } else {
-        // 👇 YAHAN PROFILE BHI JA RAHA HAI
         await signup(email, password, "student", { name, roll });
         toast.success("Account created successfully!");
       }
 
       navigate("/student");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error(err?.message || "Authentication failed");
+      toast.error(authErrorMessage(err));
     } finally {
       setLoading(false);
     }

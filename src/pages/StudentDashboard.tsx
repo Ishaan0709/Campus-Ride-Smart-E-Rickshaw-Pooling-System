@@ -14,6 +14,30 @@ import { signOut } from "firebase/auth";
 import { getUserData, updateUserProfile } from "@/lib/firebase";
 import { useAppStore } from "@/store/useAppStore";
 
+type TimePref = "now" | "10min" | "30min";
+
+interface StudentRide {
+  id: string;
+  pickup: string;
+  drop: string;
+  createdAt: Date;
+  status: string;
+  fare: number;
+  mode: "solo" | "pool";
+  rating?: number;
+  studentId?: string;
+  studentName?: string | null;
+  timePreference?: TimePref;
+  otp?: string;
+  completedAt?: Date;
+  driver?: {
+    name: string;
+    vehicle: string;
+    rating: number;
+    phone: string;
+  };
+}
+
 export default function StudentDashboard() {
   const navigate = useNavigate();
   const { currentUser, setCurrentUser } = useAppStore();
@@ -22,10 +46,10 @@ export default function StudentDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [pickup, setPickup] = useState("");
   const [drop, setDrop] = useState("");
-  const [timePref, setTimePref] = useState<"now" | "10min" | "30min">("now");
+  const [timePref, setTimePref] = useState<TimePref>("now");
   const [mode, setMode] = useState<"solo" | "pool">("pool");
   const [otpCopied, setOtpCopied] = useState(false);
-  const [activeRide, setActiveRide] = useState<any>(null);
+  const [activeRide, setActiveRide] = useState<StudentRide | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileData, setProfileData] = useState({
     name: "",
@@ -68,7 +92,7 @@ export default function StudentDashboard() {
   ];
   
   // Ride History
-  const [rideHistory, setRideHistory] = useState<any[]>([
+  const [rideHistory, setRideHistory] = useState<StudentRide[]>([
     {
       id: "1",
       pickup: "Hostel A Block",
@@ -113,6 +137,13 @@ export default function StudentDashboard() {
         }
 
         const userData = await getUserData(user.uid);
+
+        if (userData?.role && userData.role !== "student") {
+          await signOut(auth);
+          toast.error("This account is not a student account");
+          navigate("/auth/student");
+          return;
+        }
         
         if (userData) {
           setCurrentUser({
@@ -587,10 +618,10 @@ export default function StudentDashboard() {
                     Pickup Time
                   </label>
                   <div className="flex gap-2">
-                    {["now", "10min", "30min"].map((time) => (
+                    {(["now", "10min", "30min"] as const).map((time) => (
                       <button
                         key={time}
-                        onClick={() => setTimePref(time as any)}
+                        onClick={() => setTimePref(time)}
                         className={`flex-1 py-2 rounded-lg border transition-colors ${
                           timePref === time
                             ? "bg-[#A30303] text-white border-[#A30303]"
