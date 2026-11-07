@@ -265,6 +265,13 @@ export default function AdminDashboard() {
             </p>
           </motion.div>
 
+          <div className="flex items-center gap-3">
+          <Button
+            onClick={() => navigate("/lab")}
+            className="bg-[#7B0000] text-white"
+          >
+            Simulation Lab
+          </Button>
           <Button
             variant="ghost"
             onClick={handleLogout}
@@ -273,6 +280,7 @@ export default function AdminDashboard() {
             <LogOut className="w-4 h-4 mr-2" />
             Logout
           </Button>
+          </div>
         </div>
 
         {/* KPIs */}

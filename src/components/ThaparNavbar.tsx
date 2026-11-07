@@ -9,7 +9,7 @@ export default function ThaparNavbar() {
         {/* Logo & Title */}
         <div className="flex items-center gap-3">
           <img
-            src="/thapar-logo.png"
+            src={`${import.meta.env.BASE_URL}thapar-logo.png`}
             alt="Thapar Logo"
             className="h-12 w-auto object-contain"
           />
@@ -42,6 +42,12 @@ export default function ThaparNavbar() {
             className="px-5 py-2 rounded-full border border-white/60 text-white text-sm hover:bg-white/10 transition"
           >
             Admin
+          </NavLink>
+          <NavLink
+            to="/lab"
+            className="px-5 py-2 rounded-full border border-white/60 text-white text-sm hover:bg-white/10 transition"
+          >
+            Lab
           </NavLink>
         </div>
       </div>

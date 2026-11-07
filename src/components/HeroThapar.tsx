@@ -6,7 +6,7 @@ export default function HeroThapar() {
       {/* Background Image */}
       <div
         className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: "url('/thapar.jpg')" }}
+        style={{ backgroundImage: `url('${import.meta.env.BASE_URL}thapar.jpg')` }}
       />
 
       {/* LEFT ALIGNED CONTENT – no box, only white text */}
@@ -21,25 +21,17 @@ export default function HeroThapar() {
         </p>
 
         <div className="mt-8 flex justify-start gap-4">
-          <a
-            href="/auth/admin"
-            className="px-7 py-3 bg-[#AA0000] rounded-full text-white text-lg font-semibold shadow hover:bg-[#8a0000] transition"
-          >
+          <a href={`${import.meta.env.BASE_URL}auth/admin`} className="px-7 py-3 bg-[#AA0000] rounded-full text-white text-lg font-semibold shadow hover:bg-[#8a0000] transition">
             Demo
           </a>
-
-          <a
-            href="/auth/student"
-            className="px-7 py-3 rounded-full border border-white/70 text-white text-lg font-semibold bg-white/5 hover:bg-white/15 transition"
-          >
+          <a href={`${import.meta.env.BASE_URL}auth/student`} className="px-7 py-3 rounded-full border border-white/70 text-white text-lg font-semibold bg-white/5 hover:bg-white/15 transition">
             Student Login
           </a>
-
-          <a
-            href="/auth/driver"
-            className="px-7 py-3 rounded-full border border-white/70 text-white text-lg font-semibold bg-white/5 hover:bg-white/15 transition"
-          >
+          <a href={`${import.meta.env.BASE_URL}auth/driver`} className="px-7 py-3 rounded-full border border-white/70 text-white text-lg font-semibold bg-white/5 hover:bg-white/15 transition">
             Driver Login
+          </a>
+          <a href={`${import.meta.env.BASE_URL}lab`} className="px-7 py-3 rounded-full border border-white/70 text-white text-lg font-semibold bg-white/5 hover:bg-white/15 transition">
+            Simulation Lab
           </a>
         </div>
       </div>

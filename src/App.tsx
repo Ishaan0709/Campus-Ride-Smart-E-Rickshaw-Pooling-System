@@ -12,11 +12,13 @@ import AdminAuth from "./pages/auth/AdminAuth";
 import StudentDashboard from "./pages/StudentDashboard";
 import DriverDashboard from "./pages/DriverDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import SimulationLab from "./pages/SimulationLab";
 
 import NotFound from "./pages/NotFound";
 import Footer from "@/components/Footer";
 
 const queryClient = new QueryClient();
+const basename = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function App() {
   return (
@@ -24,7 +26,7 @@ function App() {
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter basename={basename}>
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth/student" element={<StudentAuth />} />
@@ -34,6 +36,7 @@ function App() {
             <Route path="/student" element={<StudentDashboard />} />
             <Route path="/driver" element={<DriverDashboard />} />
             <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/lab" element={<SimulationLab />} />
 
             {/* must be last */}
             <Route path="*" element={<NotFound />} />
