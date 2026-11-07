@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import FleetMap from "@/components/FleetMap";
+import { AlgoDrawer, PoolReveal } from "@/components/LabReveal";
 import { etaMinutes, haversineKm } from "@/engine/distance";
 import { scoreDriver } from "@/engine/matching/score";
 import type { DriverRecord, RideRequest } from "@/engine/types";
@@ -285,6 +286,10 @@ function PoolStage({
             startedAt={startedAt}
           />
         </div>
+        <PoolReveal
+          kabirWait={clock(waitedSeconds(oldAutos.find((auto) => auto.id === "old-prithvi") ?? oldAutos[0], startedAt))}
+          projectWait={clock(waitedSeconds(nowAutos.find((auto) => auto.id === "now-audi") ?? nowAutos[0], startedAt))}
+        />
       </main>
       <div className="sticky bottom-0 border-t border-black/5 bg-[#f3f0ea]/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
@@ -460,14 +465,24 @@ function SameSecond({ started }: { started: boolean }) {
   }, []);
 
   const links = started
-    ? decision.map((item) => ({
-      id: item.request.id,
-      from: [item.chosen.driver.location.lat, item.chosen.driver.location.lng] as [number, number],
-      to: [item.request.pickup.lat, item.request.pickup.lng] as [number, number],
-      color: item.chosen.driver.id === "near-west" ? "#111827" : "#9a3412",
-      label: `${item.chosen.driver.name} takes ${item.name}. Pickup ${item.chosen.score.pickupKm.toFixed(2)} km.`,
-      strong: true,
-    }))
+    ? decision.flatMap((item) => [
+      {
+        id: `${item.request.id}-skip`,
+        from: [item.other.driver.location.lat, item.other.driver.location.lng] as [number, number],
+        to: [item.request.pickup.lat, item.request.pickup.lng] as [number, number],
+        color: "#9ca3af",
+        label: `${item.other.driver.name} is ${item.other.score.pickupKm.toFixed(2)} km away. Not offered.`,
+        dash: "6 6",
+      },
+      {
+        id: item.request.id,
+        from: [item.chosen.driver.location.lat, item.chosen.driver.location.lng] as [number, number],
+        to: [item.request.pickup.lat, item.request.pickup.lng] as [number, number],
+        color: item.chosen.driver.id === "near-west" ? "#111827" : "#9a3412",
+        label: `${item.chosen.driver.name} takes ${item.name}. ${item.chosen.score.pickupKm.toFixed(2)} km.`,
+        strong: true,
+      },
+    ])
     : [];
 
   return (
@@ -477,13 +492,14 @@ function SameSecond({ started }: { started: boolean }) {
       </p>
       <div className="mt-6 overflow-hidden rounded-3xl bg-white shadow-sm">
         <FleetMap
-          drivers={decision[0] ? [
-            { id: "near-west", name: "Auto 1", lat: NEERAM.lat, lng: NEERAM.lng, badge: "Auto 1", detail: "Neeram Hall", color: "#111827" },
-            { id: "near-east", name: "Auto 2", lat: AUDI.lat, lng: AUDI.lng, badge: "Auto 2", detail: "Auditorium", color: "#9a3412" },
-          ] : []}
+          fitKey={started ? "same-offered" : "same-waiting"}
+          drivers={[
+            { id: "near-west", name: "Auto 1", lat: NEERAM.lat, lng: NEERAM.lng, badge: "Auto 1", detail: "Neeram Hall", color: "#111827", dy: 30, dx: -36 },
+            { id: "near-east", name: "Auto 2", lat: AUDI.lat, lng: AUDI.lng, badge: "Auto 2", detail: "Auditorium", color: "#9a3412", dy: 30, dx: 40 },
+          ]}
           students={[
-            { id: "aarav", name: "Aarav", lat: PRITHVI.lat, lng: PRITHVI.lng, badge: "Aarav", detail: "Prithvi Hall", color: "#1d4ed8" },
-            { id: "mehak", name: "Mehak", lat: EBLOCK.lat, lng: EBLOCK.lng, badge: "Mehak", detail: "E Block", color: "#1d4ed8" },
+            { id: "aarav", name: "Aarav", lat: PRITHVI.lat, lng: PRITHVI.lng, badge: "Aarav", detail: "Prithvi Hall", color: "#1d4ed8", dy: -20, dx: 10 },
+            { id: "mehak", name: "Mehak", lat: EBLOCK.lat, lng: EBLOCK.lng, badge: "Mehak", detail: "E Block", color: "#1d4ed8", dy: -20, dx: 8 },
           ]}
           links={links}
         />
@@ -515,9 +531,17 @@ function SameSecond({ started }: { started: boolean }) {
           </article>
         ))}
       </div>
-      <p className="mx-auto mt-6 max-w-3xl text-center text-base leading-7 text-gray-600">
-        Both requests have the same time, so neither student is first in line. The score is mostly the pickup time. Extra route and seats already taken are part of it too. Here both autos are empty, so the shorter pickup is offered.
-      </p>
+      <p className="mt-4 text-sm text-gray-500">Solid line is the offer. The dashed line is the farther auto, which is not used.</p>
+      <AlgoDrawer
+        title="Why these autos were offered"
+        rows={[
+          { label: "Algorithm", value: "Each free auto is scored for each student. The lower score is offered. Students are considered from the closest pair outward, and an auto already offered is not offered again." },
+          { label: "What happened", value: decision.map((item) => `${item.name} at ${item.from}: ${item.chosen.driver.name} at ${item.chosen.score.pickupKm.toFixed(2)} km (${item.chosen.score.etaMin.toFixed(1)} min), not ${item.other.driver.name} at ${item.other.score.pickupKm.toFixed(2)} km.`).join(" ") },
+          { label: "Why", value: "Both requests share the same timestamp, so nobody is first in line. Both autos are empty, so fullness and past rides do not change the score. Pickup distance is the whole decision." },
+          { label: "Markings", value: "After Start, the solid line is the offer. Auto 1 sits by Prithvi, so Aarav’s walk is 0.10 km. Auto 2 sits by E Block, so Mehak’s walk is 0.22 km. The other pairing is about a kilometre." },
+          { label: "How the score is built", value: "Pickup minutes, plus 0.8 times extra kilometres, plus 1.2 times any detour for people already aboard, plus a small term for how full the auto is and how many rides it has finished." },
+        ]}
+      />
     </main>
   );
 }

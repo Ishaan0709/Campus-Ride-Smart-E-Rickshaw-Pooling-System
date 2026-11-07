@@ -18,6 +18,9 @@ export interface MapPerson {
   detail?: string;
   color?: string;
   badge?: string;
+  /** Pixel offset for the name, so nearby labels do not cover each other. */
+  dx?: number;
+  dy?: number;
 }
 
 export interface MapHex {
@@ -34,6 +37,7 @@ export interface MapLink {
   color: string;
   label: string;
   strong?: boolean;
+  dash?: string;
 }
 
 interface FleetMapProps {
@@ -42,6 +46,7 @@ interface FleetMapProps {
   rides?: Ride[];
   hexes?: MapHex[];
   links?: MapLink[];
+  fitKey?: string;
   onPick?: (lat: number, lng: number) => void;
 }
 
@@ -61,7 +66,19 @@ function pin(html: string, width: number, height: number) {
   });
 }
 
-export default function FleetMap({ drivers, students, rides = [], hexes = [], links, onPick }: FleetMapProps) {
+function dotLabel(color: string, text: string, dx = 0, dy = -16) {
+  return L.divIcon({
+    className: "campus-pin",
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+    html: `<div style="position:relative;width:0;height:0">
+      <span style="position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:99px;background:${color};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)"></span>
+      <span style="position:absolute;left:${dx}px;top:${dy}px;transform:translate(-50%,-100%);font:600 11px/16px Inter,sans-serif;color:#1c1917;background:rgba(255,255,255,.95);border:1px solid rgba(0,0,0,.08);border-radius:999px;padding:0 6px;white-space:nowrap">${text}</span>
+    </div>`,
+  });
+}
+
+export default function FleetMap({ drivers, students, rides = [], hexes = [], links, fitKey, onPick }: FleetMapProps) {
   const node = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -111,7 +128,7 @@ export default function FleetMap({ drivers, students, rides = [], hexes = [], li
       }
     }
 
-    const drawn = links ?? rides.flatMap((ride) => {
+    const drawn: MapLink[] = links ?? rides.flatMap((ride) => {
       const driver = drivers.find((item) => item.id === ride.driverId);
       if (!driver || !["OFFERED", "ACCEPTED", "OTP_VERIFIED", "IN_PROGRESS"].includes(ride.status)) return [];
       return [{
@@ -128,7 +145,8 @@ export default function FleetMap({ drivers, students, rides = [], hexes = [], li
       L.polyline([link.from, link.to], {
         color: link.color,
         weight: link.strong ? 4 : 2,
-        opacity: link.strong ? 0.9 : 0.35,
+        opacity: link.strong ? 0.9 : 0.45,
+        dashArray: link.dash,
       }).bindTooltip(link.label).addTo(layer);
     }
 
@@ -136,11 +154,8 @@ export default function FleetMap({ drivers, students, rides = [], hexes = [], li
       const color = student.color ?? "#1d4ed8";
       if (student.badge) {
         L.marker([student.lat, student.lng], {
-          icon: pin(
-            `<div style="background:#fff;color:${color};border:2px solid ${color};border-radius:999px;padding:3px 8px;font:600 12px Inter,sans-serif;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25)">${student.badge}</div>`,
-            88,
-            26,
-          ),
+          icon: dotLabel(color, student.badge, student.dx ?? 0, student.dy ?? -14),
+          zIndexOffset: 400,
         }).bindTooltip(student.detail ?? student.name).addTo(layer);
       } else {
         L.circleMarker([student.lat, student.lng], {
@@ -157,11 +172,7 @@ export default function FleetMap({ drivers, students, rides = [], hexes = [], li
       if (driver.badge) {
         L.marker([driver.lat, driver.lng], {
           zIndexOffset: 500,
-          icon: pin(
-            `<div style="background:${color};color:#fff;border-radius:12px;padding:4px 8px;font:600 12px Inter,sans-serif;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);text-align:center;line-height:1.2">${driver.badge}${driver.detail ? `<div style="font-weight:500;font-size:11px">${driver.detail}</div>` : ""}</div>`,
-            92,
-            38,
-          ),
+          icon: dotLabel(color, driver.badge, driver.dx ?? 0, driver.dy ?? 22),
         }).bindTooltip(`${driver.name}. ${driver.detail ?? driver.status ?? ""}`).addTo(layer);
       } else {
         L.circleMarker([driver.lat, driver.lng], {
@@ -173,6 +184,17 @@ export default function FleetMap({ drivers, students, rides = [], hexes = [], li
       }
     }
   }, [drivers, students, rides, hexes, links]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !fitKey) return;
+    const points = [...drivers, ...students];
+    if (points.length < 2) return;
+    map.fitBounds(points.map((point) => [point.lat, point.lng] as [number, number]), {
+      padding: [64, 64],
+      maxZoom: 16,
+    });
+  }, [fitKey]);
 
   return <div ref={node} className="h-full min-h-[420px] w-full" />;
 }
