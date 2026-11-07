@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import FleetMap from "@/components/FleetMap";
 import { AlgoDrawer, PoolReveal } from "@/components/LabReveal";
+import { claimSeat } from "@/engine/concurrency/claim";
 import { etaMinutes, haversineKm } from "@/engine/distance";
+import { hungarianMatches } from "@/engine/matching/hungarianMatcher";
 import { scoreDriver } from "@/engine/matching/score";
+import { MemoryClaimStore } from "@/engine/ports";
 import type { DriverRecord, RideRequest } from "@/engine/types";
 import { placeById } from "@/lib/campus";
 
-type Stage = "pool" | "same";
+type Stage = "pool" | "same" | "lock";
 type Phase = "idle" | "live";
 type RideStatus = "idle" | "waiting" | "riding";
 
@@ -36,8 +39,7 @@ const PRITHVI = placeById("prithvi-hall");
 const NEERAM = placeById("neeram-hall");
 const EBLOCK = placeById("e-block");
 
-const LIBRARY_MIN = etaMinutes(haversineKm(AGIRA, LIBRARY));
-const AUDI_MIN = etaMinutes(haversineKm(AGIRA, PRITHVI) + haversineKm(PRITHVI, AUDI));
+const PICKUP_MIN = etaMinutes(haversineKm(AGIRA, PRITHVI) + haversineKm(PRITHVI, LIBRARY));
 const OLD_AGIRA_MIN = etaMinutes(haversineKm(AGIRA, LIBRARY) + haversineKm(LIBRARY, AUDI));
 const OLD_PRITHVI_MIN = etaMinutes(haversineKm(PRITHVI, AUDI));
 
@@ -81,30 +83,17 @@ function freshAutos(): RideAuto[] {
       departedAt: null,
     },
     {
-      id: "now-library",
+      id: "now-agira",
       side: "now",
-      title: "Library ride",
-      route: ["Agira Hall", "Library"],
+      title: "Auto at Agira",
+      route: ["Agira Hall", "Prithvi Hall", "Library"],
       seats: [
         { id: "riya2", name: "Riya", to: "Library" },
         { id: "arjun2", name: "Arjun", to: "Library" },
-      ],
-      capacity: 4,
-      rideMin: LIBRARY_MIN,
-      status: "idle",
-      departedAt: null,
-    },
-    {
-      id: "now-audi",
-      side: "now",
-      title: "Auditorium ride",
-      route: ["Agira Hall", "Prithvi Hall", "Auditorium"],
-      seats: [
         { id: "sara2", name: "Sara", to: "Auditorium" },
-        { id: "kabir2", name: "Kabir", to: "Auditorium" },
       ],
       capacity: 4,
-      rideMin: AUDI_MIN,
+      rideMin: PICKUP_MIN,
       status: "idle",
       departedAt: null,
     },
@@ -124,6 +113,7 @@ export default function SimulationLab() {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
   const [sameStarted, setSameStarted] = useState(false);
+  const [lockStarted, setLockStarted] = useState(false);
   const guests = useRef(0);
   const timers = useRef<number[]>([]);
 
@@ -139,6 +129,7 @@ export default function SimulationLab() {
     setAutos(freshAutos());
     setStartedAt(null);
     setSameStarted(false);
+    setLockStarted(false);
     setTick(0);
   }
 
@@ -157,8 +148,13 @@ export default function SimulationLab() {
     const leave = window.setTimeout(() => {
       const departed = Date.now();
       setAutos((current) => current.map((auto) => (
-        auto.side === "now" && auto.status === "waiting"
-          ? { ...auto, status: "riding", departedAt: departed }
+        auto.id === "now-agira" && auto.status === "waiting"
+          ? {
+            ...auto,
+            status: "riding",
+            departedAt: departed,
+            seats: [...auto.seats, { id: "kabir-now", name: "Kabir", to: "Library" }],
+          }
           : auto
       )));
     }, 2000);
@@ -204,9 +200,10 @@ export default function SimulationLab() {
       <header className="sticky top-0 z-20 border-b border-black/5 bg-[#f3f0ea]/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-4">
           <Link to="/" className="text-sm font-medium text-gray-500">Campus Ride</Link>
-          <div className="mx-auto flex rounded-full bg-white p-1 shadow-sm">
-            <StageTab active={stage === "pool"} onClick={() => choose("pool")}>1 · Waiting for 4</StageTab>
-            <StageTab active={stage === "same"} onClick={() => choose("same")}>2 · Same second</StageTab>
+          <div className="mx-auto flex shrink-0 rounded-full bg-white p-1 shadow-sm">
+            <StageTab active={stage === "pool"} onClick={() => choose("pool")}>1 · The wait</StageTab>
+            <StageTab active={stage === "same"} onClick={() => choose("same")}>2 · Dispatch</StageTab>
+            <StageTab active={stage === "lock"} onClick={() => choose("lock")}>3 · Last seat</StageTab>
           </div>
           {stage === "pool" ? (
             phase === "idle" ? (
@@ -214,12 +211,19 @@ export default function SimulationLab() {
             ) : (
               <button className="rounded-full border border-gray-300 bg-white px-6 py-3 text-base font-semibold" onClick={resetAll}>Run again</button>
             )
-          ) : (
-              <button
+          ) : stage === "same" ? (
+            <button
               className="rounded-full bg-[#7B0000] px-7 py-3 text-base font-semibold text-white"
               onClick={() => setSameStarted((value) => !value)}
             >
               {sameStarted ? "Reset" : "Start"}
+            </button>
+          ) : (
+            <button
+              className="rounded-full bg-[#7B0000] px-7 py-3 text-base font-semibold text-white"
+              onClick={() => setLockStarted((value) => !value)}
+            >
+              {lockStarted ? "Reset" : "Start"}
             </button>
           )}
         </div>
@@ -233,8 +237,10 @@ export default function SimulationLab() {
           canAdd={phase === "live" && oldStillWaiting}
           onAdd={addPeople}
         />
+      ) : stage === "same" ? (
+        <Dispatch started={sameStarted} />
       ) : (
-        <SameSecond started={sameStarted} />
+        <LastSeat started={lockStarted} />
       )}
     </div>
   );
@@ -244,7 +250,7 @@ function StageTab({ active, onClick, children }: { active: boolean; onClick: () 
   return (
     <button
       onClick={onClick}
-      className={`rounded-full px-5 py-2 text-sm font-semibold ${active ? "bg-[#1c1917] text-white" : "text-gray-600"}`}
+      className={`whitespace-nowrap rounded-full px-5 py-2 text-sm font-semibold ${active ? "bg-[#1c1917] text-white" : "text-gray-600"}`}
     >
       {children}
     </button>
@@ -268,19 +274,19 @@ function PoolStage({
     <>
       <main className="mx-auto max-w-6xl px-6 py-8">
         <p className="max-w-3xl text-lg text-gray-600">
-          Riya, Arjun and Sara are at Agira Hall. Kabir is at Prithvi Hall, next door. Two of them are going to the Library. Two are going to the Auditorium.
+          Three students are already seated at Agira Hall. Kabir is at Prithvi Hall, the next hostel. Before this website, the autos sit until four people have boarded. This one drives to Kabir, fills the last seat, then goes to the Library, because that drop is closer.
         </p>
         <div className="mt-8 grid items-start gap-6 lg:grid-cols-2">
           <Column
             kicker="Earlier"
-            title="Each auto waits for 4 people"
+            title="They wait until someone comes and sits"
             tone="old"
             autos={oldAutos}
             startedAt={startedAt}
           />
           <Column
             kicker="This project"
-            title="People going to the same place leave together"
+            title="Pick up the nearby student, then the closer stop"
             tone="now"
             autos={nowAutos}
             startedAt={startedAt}
@@ -288,12 +294,13 @@ function PoolStage({
         </div>
         <PoolReveal
           kabirWait={clock(waitedSeconds(oldAutos.find((auto) => auto.id === "old-prithvi") ?? oldAutos[0], startedAt))}
-          projectWait={clock(waitedSeconds(nowAutos.find((auto) => auto.id === "now-audi") ?? nowAutos[0], startedAt))}
+          projectWait={clock(waitedSeconds(nowAutos[0], startedAt))}
+          projectLeft={nowAutos[0]?.status === "riding"}
         />
       </main>
       <div className="sticky bottom-0 border-t border-black/5 bg-[#f3f0ea]/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
-          <p className="text-sm text-gray-500">Add people to the earlier autos. An auto leaves the moment it has 4.</p>
+          <p className="text-sm text-gray-500">The earlier autos do not move until you seat a fourth person. That is the wait.</p>
           <div className="flex gap-3">
             <AddButton disabled={!canAdd} onClick={() => onAdd(1)}>+ 1 person</AddButton>
             <AddButton disabled={!canAdd} onClick={() => onAdd(2)}>+ 2 people</AddButton>
@@ -336,7 +343,7 @@ function AutoCard({ auto, seconds }: { auto: RideAuto; seconds: number }) {
   const statusLine = auto.status === "idle"
     ? "Not started"
     : auto.status === "waiting"
-      ? "Waiting"
+      ? (auto.side === "now" ? "Picking up" : "Waiting")
       : "Left";
 
   return (
@@ -344,11 +351,7 @@ function AutoCard({ auto, seconds }: { auto: RideAuto; seconds: number }) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold">{auto.title}</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            {auto.side === "old"
-              ? `${auto.seats.length} of ${auto.capacity} seats`
-              : `${auto.seats.length} students, same destination`}
-          </p>
+          <p className="mt-1 text-sm text-gray-500">{auto.seats.length} of {auto.capacity} seats</p>
         </div>
         <div className="text-right">
           <p className="text-4xl font-semibold tabular-nums leading-none">{clock(seconds)}</p>
@@ -362,13 +365,20 @@ function AutoCard({ auto, seconds }: { auto: RideAuto; seconds: number }) {
             <span className="block text-xs text-gray-500">{person.to}</span>
           </span>
         ))}
-        {auto.side === "old" && Array.from({ length: empties }, (_, index) => (
-          <span
-            key={`${auto.id}-empty-${index}`}
-            className={`grid min-w-[108px] place-items-center rounded-2xl border border-dashed border-gray-300 px-3 py-3 text-sm text-gray-400 ${auto.status === "waiting" ? "seat-wait" : ""}`}
-          >
-            Empty
+        {empties > 0 && (auto.side === "now" ? (
+          <span className={`min-w-[108px] rounded-2xl border border-dashed border-[#7B0000]/40 px-3 py-3 text-sm ${auto.status === "waiting" ? "seat-wait" : ""}`}>
+            <span className="block font-semibold text-[#7B0000]">Kabir</span>
+            <span className="block text-xs text-gray-500">Next door</span>
           </span>
+        ) : (
+          Array.from({ length: empties }, (_, index) => (
+            <span
+              key={`${auto.id}-empty-${index}`}
+              className={`grid min-w-[108px] place-items-center rounded-2xl border border-dashed border-gray-300 px-3 py-3 text-sm text-gray-400 ${auto.status === "waiting" ? "seat-wait" : ""}`}
+            >
+              Empty
+            </span>
+          ))
         ))}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-gray-600">
@@ -383,8 +393,10 @@ function AutoCard({ auto, seconds }: { auto: RideAuto; seconds: number }) {
         {auto.status === "riding"
           ? `Waited ${clock(seconds)} · ride ${minutesLabel(auto.rideMin)}`
           : auto.side === "old"
-            ? "Stays here until 4 seats are full"
-            : "Leaves with this group. It does not wait for 4."}
+            ? "Stays here until 4 people have sat down"
+            : auto.status === "waiting"
+              ? "Driving to Prithvi to pick Kabir"
+              : "Will pick Kabir, then go to the Library"}
       </p>
     </article>
   );
@@ -416,130 +428,297 @@ function driverAt(id: string, name: string, place: { lat: number; lng: number })
   };
 }
 
-function requestAt(
+const TAN = placeById("tan");
+
+function shift(place: { lat: number; lng: number }, northM: number, eastM: number) {
+  return { lat: place.lat + northM / 111_000, lng: place.lng + eastM / (111_000 * Math.cos(place.lat * Math.PI / 180)) };
+}
+
+interface CastMember {
+  id: string;
+  name: string;
+  from: string;
+  to: string;
+  pickup: { lat: number; lng: number };
+  drop: { lat: number; lng: number };
+  request: RideRequest;
+}
+
+function castMember(
   id: string,
   name: string,
+  from: string,
   pickup: { lat: number; lng: number },
-  pickupLabel: string,
+  to: string,
   drop: { lat: number; lng: number },
-): RideRequest {
+): CastMember {
   return {
     id,
-    studentId: id,
-    studentName: name,
+    name,
+    from,
+    to,
     pickup,
-    pickupLabel,
     drop,
-    dropLabel: "Central Library",
-    seats: 1,
-    createdAt: 0,
-    idempotencyKey: id,
+    request: {
+      id,
+      studentId: id,
+      studentName: name,
+      pickup,
+      pickupLabel: from,
+      drop,
+      dropLabel: to,
+      seats: 1,
+      createdAt: 0,
+      idempotencyKey: id,
+    },
   };
 }
 
-function SameSecond({ started }: { started: boolean }) {
-  const decision = useMemo(() => {
+function Dispatch({ started }: { started: boolean }) {
+  const [step, setStep] = useState(0);
+  const plan = useMemo(() => {
     const drivers = [
-      driverAt("near-west", "Auto 1", NEERAM),
-      driverAt("near-east", "Auto 2", AUDI),
+      driverAt("auto-1", "Auto 1", NEERAM),
+      driverAt("auto-2", "Auto 2", AUDI),
+      driverAt("auto-3", "Auto 3", LIBRARY),
+      { ...driverAt("auto-4", "Auto 4", AGIRA), passengerCount: 4, status: "occupied" as const },
     ];
     const students = [
-      { name: "Aarav", from: "Prithvi Hall", request: requestAt("aarav", "Aarav", PRITHVI, "Prithvi Hall", LIBRARY) },
-      { name: "Mehak", from: "E Block", request: requestAt("mehak", "Mehak", EBLOCK, "E Block", LIBRARY) },
+      castMember("aarav", "Aarav", "Prithvi Hall", PRITHVI, "Library", LIBRARY),
+      castMember("mehak", "Mehak", "E Block", EBLOCK, "Auditorium", AUDI),
+      castMember("kabir", "Kabir", "TAN Block", TAN, "Library", LIBRARY),
+      castMember("sara", "Sara", "Agira Hall", AGIRA, "Auditorium", AUDI),
     ];
-    const used = new Set<string>();
-    const rankedStudents = [...students].sort((a, b) => {
-      const aBest = Math.min(...drivers.map((driver) => scoreDriver(driver, a.request).pickupKm));
-      const bBest = Math.min(...drivers.map((driver) => scoreDriver(driver, b.request).pickupKm));
-      return aBest - bBest;
-    });
-    return rankedStudents.map((student) => {
+    const free = drivers.filter((driver) => driver.passengerCount < driver.capacity);
+    const nearest = students.map((student) => {
       const ranked = drivers
         .map((driver) => ({ driver, score: scoreDriver(driver, student.request) }))
         .sort((a, b) => a.score.pickupKm - b.score.pickupKm);
-      const chosen = ranked.find((item) => !used.has(item.driver.id)) ?? ranked[0];
-      used.add(chosen.driver.id);
-      const other = ranked.find((item) => item.driver.id !== chosen.driver.id) ?? ranked[1];
-      return { ...student, chosen, other };
+      const feasible = ranked.filter((item) => item.score.feasible);
+      return { student, closest: ranked[0], bestFree: feasible[0], secondFree: feasible[1] };
     });
+    const offers = hungarianMatches(students.map((student) => student.request), free);
+    const offerByStudent = new Map(offers.map((match) => [match.request.id, match]));
+    return { drivers, students, nearest, offerByStudent };
   }, []);
 
-  const links = started
-    ? decision.flatMap((item) => [
-      {
-        id: `${item.request.id}-skip`,
-        from: [item.other.driver.location.lat, item.other.driver.location.lng] as [number, number],
-        to: [item.request.pickup.lat, item.request.pickup.lng] as [number, number],
+  useEffect(() => {
+    setStep(0);
+  }, [started]);
+
+  const shown = started ? step : -1;
+  const links = shown < 1 ? [] : plan.students.flatMap((student) => {
+    const row = plan.nearest.find((item) => item.student.id === student.id);
+    const offer = plan.offerByStudent.get(student.id);
+    if (!row) return [];
+    if (shown === 1 && student.id === "sara") {
+      return [{
+        id: "sara-full",
+        from: [AGIRA.lat, AGIRA.lng] as [number, number],
+        to: [AGIRA.lat, AGIRA.lng] as [number, number],
         color: "#9ca3af",
-        label: `${item.other.driver.name} is ${item.other.score.pickupKm.toFixed(2)} km away. Not offered.`,
+        label: "",
+      }];
+    }
+    if (shown === 2 && row.bestFree) {
+      return [{
+        id: `${student.id}-near`,
+        from: [row.bestFree.driver.location.lat, row.bestFree.driver.location.lng] as [number, number],
+        to: [student.pickup.lat, student.pickup.lng] as [number, number],
+        color: "#9ca3af",
+        label: `${row.bestFree.score.pickupKm.toFixed(2)} km`,
         dash: "6 6",
-      },
-      {
-        id: item.request.id,
-        from: [item.chosen.driver.location.lat, item.chosen.driver.location.lng] as [number, number],
-        to: [item.request.pickup.lat, item.request.pickup.lng] as [number, number],
-        color: item.chosen.driver.id === "near-west" ? "#111827" : "#9a3412",
-        label: `${item.chosen.driver.name} takes ${item.name}. ${item.chosen.score.pickupKm.toFixed(2)} km.`,
+      }];
+    }
+    if (shown === 3 && offer) {
+      return [{
+        id: `${student.id}-offer`,
+        from: [offer.driver.location.lat, offer.driver.location.lng] as [number, number],
+        to: [student.pickup.lat, student.pickup.lng] as [number, number],
+        color: offer.driver.id === "auto-1" ? "#111827" : offer.driver.id === "auto-2" ? "#9a3412" : "#166534",
+        label: `${offer.driver.name} · ${offer.score.pickupKm.toFixed(2)} km`,
         strong: true,
-      },
-    ])
-    : [];
+      }];
+    }
+    return [];
+  }).filter((link) => link.to[0] !== link.from[0] || link.label);
+
+  const steps = [
+    {
+      title: "Four students, one moment",
+      body: "Aarav, Mehak, Kabir and Sara all ask at the same second. Three autos are empty. One auto at Agira is already full, and Sara is standing beside it.",
+    },
+    {
+      title: "The full auto cannot take Sara",
+      body: "Auto 4 has 4 of 4 seats. Distance does not matter: a full auto is not a candidate. Sara’s walk to it is zero, and she still cannot sit.",
+    },
+    {
+      title: "Each student has a closest free auto",
+      body: plan.nearest.map((row) => `${row.student.name}: ${row.bestFree.driver.name} at ${row.bestFree.score.pickupKm.toFixed(2)} km`).join(". ") + ". Kabir and Sara both want Auto 3. Aarav is much closer to Auto 1 than Sara is.",
+    },
+    {
+      title: "Three offers. Sara waits.",
+      body: `${[...plan.offerByStudent.values()].map((match) => `${match.request.studentName} gets ${match.driver.name}, ${match.score.pickupKm.toFixed(2)} km`).join(". ")}. Sara is not offered an auto. Giving Auto 3 to her would take it from Kabir, who is 0.13 km away instead of her 0.40 km. The assignment is the one with the smallest total pickup.`,
+    },
+  ];
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <p className="max-w-3xl text-lg text-gray-600">
-        Aarav at Prithvi Hall and Mehak at E Block both ask for the Library at the same moment. Two autos are free.
+        Four students ask together. Three autos are free and one is full. Press Start, then step through what the assignment does.
       </p>
       <div className="mt-6 overflow-hidden rounded-3xl bg-white shadow-sm">
         <FleetMap
-          fitKey={started ? "same-offered" : "same-waiting"}
+          fitKey={started ? `dispatch-${step}` : "dispatch-wait"}
           drivers={[
-            { id: "near-west", name: "Auto 1", lat: NEERAM.lat, lng: NEERAM.lng, badge: "Auto 1", detail: "Neeram Hall", color: "#111827", dy: 30, dx: -36 },
-            { id: "near-east", name: "Auto 2", lat: AUDI.lat, lng: AUDI.lng, badge: "Auto 2", detail: "Auditorium", color: "#9a3412", dy: 30, dx: 40 },
+            { id: "auto-1", name: "Auto 1", lat: NEERAM.lat, lng: NEERAM.lng, badge: "Auto 1", detail: "Neeram · empty", color: "#111827", dy: 28, dx: -28 },
+            { id: "auto-2", name: "Auto 2", lat: AUDI.lat, lng: AUDI.lng, badge: "Auto 2", detail: "Auditorium · empty", color: "#9a3412", dy: 28, dx: 24 },
+            { id: "auto-3", name: "Auto 3", lat: LIBRARY.lat, lng: LIBRARY.lng, badge: "Auto 3", detail: "Library · empty", color: "#166534", dy: 26, dx: 36 },
+            { id: "auto-4", name: "Auto 4", lat: AGIRA.lat, lng: AGIRA.lng, badge: "Auto 4", detail: "Agira · 4 of 4", color: "#9ca3af", dy: 30, dx: -46 },
           ]}
           students={[
-            { id: "aarav", name: "Aarav", lat: PRITHVI.lat, lng: PRITHVI.lng, badge: "Aarav", detail: "Prithvi Hall", color: "#1d4ed8", dy: -20, dx: 10 },
-            { id: "mehak", name: "Mehak", lat: EBLOCK.lat, lng: EBLOCK.lng, badge: "Mehak", detail: "E Block", color: "#1d4ed8", dy: -20, dx: 8 },
+            { id: "aarav", name: "Aarav", lat: PRITHVI.lat, lng: PRITHVI.lng, badge: "Aarav", detail: "Prithvi → Library", color: "#1d4ed8", dy: -20, dx: 18 },
+            { id: "mehak", name: "Mehak", lat: EBLOCK.lat, lng: EBLOCK.lng, badge: "Mehak", detail: "E Block → Auditorium", color: "#1d4ed8", dy: -20, dx: 10 },
+            { id: "kabir", name: "Kabir", lat: TAN.lat, lng: TAN.lng, badge: "Kabir", detail: "TAN → Library", color: "#1d4ed8", dy: -22, dx: -20 },
+            { id: "sara", name: "Sara", lat: AGIRA.lat, lng: AGIRA.lng, badge: "Sara", detail: "Agira → Auditorium", color: "#1d4ed8", dy: -22, dx: 36 },
           ]}
           links={links}
         />
       </div>
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        {decision.map((item) => (
-          <article key={item.name} className="rounded-3xl bg-white p-6 shadow-sm">
-            <p className="text-sm text-gray-500">{item.from} → Library</p>
-            <h2 className="mt-1 text-3xl font-semibold">{item.name}</h2>
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              {[item.chosen, item.other].sort((a, b) => a.score.pickupKm - b.score.pickupKm).map((option) => {
-                const won = started && option.driver.id === item.chosen.driver.id;
-                const lost = started && option.driver.id !== item.chosen.driver.id;
-                return (
-                  <div key={option.driver.id} className={`rounded-2xl p-4 ${won ? "bg-[#1c1917] text-white" : "bg-[#f6f3ef] text-gray-900"} ${lost ? "opacity-50" : ""}`}>
-                    <p className="text-sm">{option.driver.name}</p>
-                    <p className="mt-2 text-4xl font-semibold tabular-nums">{option.score.pickupKm.toFixed(2)}</p>
-                    <p className={`text-sm ${won ? "text-white/70" : "text-gray-500"}`}>km · {option.score.etaMin.toFixed(1)} min</p>
-                    <p className={`mt-3 text-sm font-medium ${won ? "text-white" : "text-gray-400"}`}>{won ? "Offered" : lost ? "Not offered" : "Pickup"}</p>
-                  </div>
-                );
-              })}
-            </div>
-            {started && (
-              <p className="mt-4 text-sm leading-6 text-gray-600">
-                {item.chosen.driver.name} is {item.chosen.score.pickupKm.toFixed(2)} km away. {item.other.driver.name} is {item.other.score.pickupKm.toFixed(2)} km away, so that seat is not offered.
-              </p>
-            )}
-          </article>
-        ))}
+      <div className="mt-4 flex items-center justify-between gap-4">
+        <p className="text-sm text-gray-500">{started ? `Step ${step + 1} of ${steps.length}` : "Start to walk the assignment."}</p>
+        <div className="flex gap-2">
+          <button
+            className="rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
+            disabled={!started || step === 0}
+            onClick={() => setStep((value) => Math.max(0, value - 1))}
+          >
+            Back
+          </button>
+          <button
+            className="rounded-full bg-[#1c1917] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            disabled={!started || step === steps.length - 1}
+            onClick={() => setStep((value) => Math.min(steps.length - 1, value + 1))}
+          >
+            Next
+          </button>
+        </div>
       </div>
-      <p className="mt-4 text-sm text-gray-500">Solid line is the offer. The dashed line is the farther auto, which is not used.</p>
+      {started && (
+        <article className="mt-4 rounded-3xl bg-white p-6 shadow-sm">
+          <h2 className="text-2xl font-semibold">{steps[step].title}</h2>
+          <p className="mt-3 max-w-3xl text-base leading-7 text-gray-600">{steps[step].body}</p>
+        </article>
+      )}
+      {started && step === 3 && (
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          {plan.students.map((student) => {
+            const offer = plan.offerByStudent.get(student.id);
+            return (
+              <div key={student.id} className={`rounded-2xl p-4 ${offer ? "bg-[#1c1917] text-white" : "bg-white text-gray-900 shadow-sm"}`}>
+                <p className="text-sm opacity-70">{student.from}</p>
+                <p className="mt-1 text-xl font-semibold">{student.name}</p>
+                <p className="mt-3 text-sm">{offer ? `${offer.driver.name} · ${offer.score.pickupKm.toFixed(2)} km` : "No auto. All three were better for someone else."}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <AlgoDrawer
-        title="Why these autos were offered"
+        title="How the offers were chosen"
         rows={[
-          { label: "Algorithm", value: "Each free auto is scored for each student. The lower score is offered. Students are considered from the closest pair outward, and an auto already offered is not offered again." },
-          { label: "What happened", value: decision.map((item) => `${item.name} at ${item.from}: ${item.chosen.driver.name} at ${item.chosen.score.pickupKm.toFixed(2)} km (${item.chosen.score.etaMin.toFixed(1)} min), not ${item.other.driver.name} at ${item.other.score.pickupKm.toFixed(2)} km.`).join(" ") },
-          { label: "Why", value: "Both requests share the same timestamp, so nobody is first in line. Both autos are empty, so fullness and past rides do not change the score. Pickup distance is the whole decision." },
-          { label: "Markings", value: "After Start, the solid line is the offer. Auto 1 sits by Prithvi, so Aarav’s walk is 0.10 km. Auto 2 sits by E Block, so Mehak’s walk is 0.22 km. The other pairing is about a kilometre." },
-          { label: "How the score is built", value: "Pickup minutes, plus 0.8 times extra kilometres, plus 1.2 times any detour for people already aboard, plus a small term for how full the auto is and how many rides it has finished." },
+          { label: "Algorithm", value: "The Hungarian assignment. Every free auto is scored against every student, then one global matching is chosen so the sum of pickup costs is as small as possible. It is not first-come, first-served." },
+          { label: "The complication", value: "Auto 4 is full, so Sara’s nearest vehicle is impossible. Auto 3 is the closest free auto for both Kabir (0.13 km) and Sara (0.40 km). Only one of them can have it." },
+          { label: "The result", value: "Aarav gets Auto 1 (0.10 km), Mehak gets Auto 2 (0.22 km), Kabir gets Auto 3 (0.13 km). Sara has no offer. The three offers add up to 0.45 km of pickup." },
+          { label: "Why not give Sara the auto", value: "If Sara took Auto 3, Kabir would need a farther auto and the total pickup would be worse. The matching keeps the seat for the student it saves more distance for." },
+          { label: "Same timestamp", value: "All four requests share one timestamp, so arrival order never picks a winner. The costs do." },
+        ]}
+      />
+    </main>
+  );
+}
+
+const SAME_SPOT = shift(AGIRA, 0, 240);
+
+function LastSeat({ started }: { started: boolean }) {
+  const [outcome, setOutcome] = useState<{ winner: string; loser: string; version: number } | null>(null);
+
+  useEffect(() => {
+    if (!started) {
+      setOutcome(null);
+      return;
+    }
+    let cancelled = false;
+    const driver = driverAt("last", "Auto", AGIRA);
+    driver.passengerCount = 3;
+    driver.version = 4;
+    driver.status = "assigned";
+    const store = new MemoryClaimStore([driver]);
+    Promise.all([
+      claimSeat(store, "last", 1, "safe", 40),
+      claimSeat(store, "last", 1, "safe", 40),
+    ]).then((results) => {
+      if (cancelled) return;
+      const names = ["Dev", "Aman"];
+      const winnerIndex = results.findIndex((result) => result.ok);
+      const winner = names[winnerIndex] ?? names[0];
+      const loser = names[winnerIndex === 0 ? 1 : 0];
+      setOutcome({ winner, loser, version: results[0].observedVersion });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [started]);
+
+  const devWon = outcome?.winner === "Dev";
+  return (
+    <main className="mx-auto max-w-6xl px-6 py-8">
+      <p className="max-w-3xl text-lg text-gray-600">
+        The auto already has 3 students. Dev and Aman are the same distance away and they ask at the same moment. There is one seat. The lock decides, not the distance.
+      </p>
+      <div className="mt-6 overflow-hidden rounded-3xl bg-white shadow-sm">
+        <FleetMap
+          fitKey={outcome ? "lock-done" : "lock-wait"}
+          drivers={[{ id: "last", name: "Auto", lat: AGIRA.lat, lng: AGIRA.lng, badge: "Auto", detail: outcome ? "4 of 4 · locked" : "3 of 4 · one seat", color: "#111827", dy: 28 }]}
+          students={[
+            { id: "dev", name: "Dev", lat: SAME_SPOT.lat, lng: SAME_SPOT.lng, badge: outcome ? (devWon ? "Dev · seat" : "Dev · no seat") : "Dev", detail: "Same distance", color: "#1d4ed8", dy: -16, dx: -48 },
+            { id: "aman", name: "Aman", lat: SAME_SPOT.lat, lng: SAME_SPOT.lng, badge: outcome ? (!devWon ? "Aman · seat" : "Aman · no seat") : "Aman", detail: "Same time", color: "#1d4ed8", dy: 8, dx: 56 },
+          ]}
+          links={outcome ? [{
+            id: "won",
+            from: [AGIRA.lat, AGIRA.lng],
+            to: [SAME_SPOT.lat, SAME_SPOT.lng],
+            color: "#166534",
+            label: `${outcome.winner} · the lock held`,
+            strong: true,
+          }] : []}
+        />
+      </div>
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        {["Dev", "Aman"].map((name) => {
+          const won = outcome?.winner === name;
+          const lost = outcome?.loser === name;
+          return (
+            <article key={name} className={`rounded-3xl p-6 ${won ? "bg-[#1c1917] text-white" : "bg-white shadow-sm"}`}>
+              <p className="text-sm opacity-70">Same place · same second</p>
+              <h2 className="mt-1 text-3xl font-semibold">{name}</h2>
+              <p className="mt-4 text-lg">
+                {!outcome && "Waiting for the lock"}
+                {won && "Got the seat. Version 4 became 5."}
+                {lost && "Rejected. The version was no longer 4."}
+              </p>
+            </article>
+          );
+        })}
+      </div>
+      <AlgoDrawer
+        title="Why only one student sits"
+        rows={[
+          { label: "Atomicity", value: "Taking the seat and advancing the version are one write. Both happen, or neither happens. The auto cannot end up with two students and one seat." },
+          { label: "The lock", value: "The auto’s row has a version, here 4. A student may write the fourth passenger only if the version is still 4. That compare-and-set is the lock databases use so two transactions cannot commit the same row." },
+          { label: "What happened", value: outcome ? `Both reads saw version ${outcome.version} and 3 passengers. ${outcome.winner}’s write committed and the version became 5. ${outcome.loser}’s write found version 5, so it was rejected. Distance was equal, so it decided nothing.` : "Press Start. Both claims read the row, then both try to write. Only one write matches the version." },
+          { label: "Isolation", value: "The second student is not allowed to use a stale read. Once the first commit lands, the old picture of “one seat free” is no longer a legal basis for a write." },
+          { label: "Without the lock", value: "If the write ignored the version, both students would be told yes and the auto would show two people in one seat. That is a double booking. This project does not do that." },
         ]}
       />
     </main>
