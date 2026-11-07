@@ -104,3 +104,11 @@ body {
   background: transparent;
   border: none;
 }
+
+@keyframes seat-wait {
+  50% { border-color: #7B0000; background: #fff5f5; }
+}
+
+.seat-wait {
+  animation: seat-wait 1.6s ease-in-out infinite;
+}

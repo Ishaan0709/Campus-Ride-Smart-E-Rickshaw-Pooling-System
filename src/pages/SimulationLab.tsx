@@ -1,421 +1,523 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import FleetMap from "@/components/FleetMap";
-import { CAMPUS_PLACES } from "@/lib/campus";
-import { CAMPUS_LOOKUP_RADIUS_M, benchmarkSpatialLookup, demandHexes } from "@/engine/spatial/spatialIndex";
-import type { DriverRecord, MatchStrategy, Ride, SafetyMode } from "@/engine/types";
-import {
-  autoColor,
-  autoPhrase,
-  finishedRides,
-  ridePhrase,
-  ridesOnAuto,
-  spreadPoint,
-  waitingRides,
-} from "@/simulation/explain";
-import {
-  advanceSim,
-  compareCurrent,
-  createSimState,
-  formatSimTime,
-  loadSimConfig,
-  presetConfigs,
-  saveSimConfig,
-  savedConfigNames,
-  simMetrics,
-  type SimConfig,
-  type SimState,
-  type SimStudent,
-} from "@/simulation/simulator";
+import { etaMinutes, haversineKm } from "@/engine/distance";
+import { scoreDriver } from "@/engine/matching/score";
+import type { DriverRecord, RideRequest } from "@/engine/types";
+import { placeById } from "@/lib/campus";
 
-const SPEEDS = [1, 2, 5, 10];
-const CAMPUS_CENTER = { lat: 30.3532, lng: 76.3665 };
+type Stage = "pool" | "same";
+type Phase = "idle" | "live";
+type RideStatus = "idle" | "waiting" | "riding";
 
-const SCENARIO_HELP: Record<string, string> = {
-  "Two students, one auto": "Aarav and Mehak both ask. One auto holds 4 students. Watch who is offered a seat and who is still waiting.",
-  "Two students, two autos": "Two named students and two named autos. Each student should be matched to a different auto.",
-  "Rush hour: 20 students, 5 autos": "Twenty students ask and five autos are free. This scenario gives each auto one student, so fifteen students stay waiting. An auto holds 4 only when the strategy is pooling.",
-  "Multiple simultaneous requests": "Four students ask at the same moment. The matching looks at all of them together.",
-  "Driver goes offline": "Auto 1 is switched off, so the student has to be offered to Auto 2.",
-  "Driver rejects ride": "Auto 1 refuses the student. The lab then looks for Auto 2.",
-  "Offer timeout": "Auto 1 does not answer. After 8 seconds the student is offered to Auto 2.",
-  "Ride pooling": "Three students can share Auto 1 when the extra distance stays short. The seat count should climb 1, then 2, then 3.",
-  "Unsafe vs safe allocation": "Both students are written onto the same seat. The card will say double booked. Safe mode would keep one seat for one student.",
-  "Greedy vs Hungarian": "Greedy gives the first student the closer auto. Hungarian may swap the two so the combined pickup drive is shorter.",
-};
+interface Person {
+  id: string;
+  name: string;
+  to: string;
+}
+
+interface RideAuto {
+  id: string;
+  side: "old" | "now";
+  title: string;
+  route: string[];
+  seats: Person[];
+  capacity: number;
+  rideMin: number;
+  status: RideStatus;
+  departedAt: number | null;
+}
+
+const LIBRARY = placeById("library");
+const AUDI = placeById("auditorium");
+const AGIRA = placeById("agira-hall");
+const PRITHVI = placeById("prithvi-hall");
+const NEERAM = placeById("neeram-hall");
+const EBLOCK = placeById("e-block");
+
+const LIBRARY_MIN = etaMinutes(haversineKm(AGIRA, LIBRARY));
+const AUDI_MIN = etaMinutes(haversineKm(AGIRA, PRITHVI) + haversineKm(PRITHVI, AUDI));
+const OLD_AGIRA_MIN = etaMinutes(haversineKm(AGIRA, LIBRARY) + haversineKm(LIBRARY, AUDI));
+const OLD_PRITHVI_MIN = etaMinutes(haversineKm(PRITHVI, AUDI));
+
+function clock(seconds: number) {
+  const whole = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(whole / 60);
+  const remain = whole % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remain).padStart(2, "0")}`;
+}
+
+function minutesLabel(minutes: number) {
+  return `${minutes.toFixed(1)} min`;
+}
+
+function freshAutos(): RideAuto[] {
+  return [
+    {
+      id: "old-agira",
+      side: "old",
+      title: "Auto at Agira",
+      route: ["Agira Hall", "Library", "Auditorium"],
+      seats: [
+        { id: "riya", name: "Riya", to: "Library" },
+        { id: "arjun", name: "Arjun", to: "Library" },
+        { id: "sara", name: "Sara", to: "Auditorium" },
+      ],
+      capacity: 4,
+      rideMin: OLD_AGIRA_MIN,
+      status: "idle",
+      departedAt: null,
+    },
+    {
+      id: "old-prithvi",
+      side: "old",
+      title: "Auto at Prithvi",
+      route: ["Prithvi Hall", "Auditorium"],
+      seats: [{ id: "kabir", name: "Kabir", to: "Auditorium" }],
+      capacity: 4,
+      rideMin: OLD_PRITHVI_MIN,
+      status: "idle",
+      departedAt: null,
+    },
+    {
+      id: "now-library",
+      side: "now",
+      title: "Library ride",
+      route: ["Agira Hall", "Library"],
+      seats: [
+        { id: "riya2", name: "Riya", to: "Library" },
+        { id: "arjun2", name: "Arjun", to: "Library" },
+      ],
+      capacity: 4,
+      rideMin: LIBRARY_MIN,
+      status: "idle",
+      departedAt: null,
+    },
+    {
+      id: "now-audi",
+      side: "now",
+      title: "Auditorium ride",
+      route: ["Agira Hall", "Prithvi Hall", "Auditorium"],
+      seats: [
+        { id: "sara2", name: "Sara", to: "Auditorium" },
+        { id: "kabir2", name: "Kabir", to: "Auditorium" },
+      ],
+      capacity: 4,
+      rideMin: AUDI_MIN,
+      status: "idle",
+      departedAt: null,
+    },
+  ];
+}
+
+function waitedSeconds(auto: RideAuto, startedAt: number | null) {
+  if (!startedAt || auto.status === "idle") return 0;
+  const end = auto.departedAt ?? Date.now();
+  return Math.max(0, (end - startedAt) / 1000);
+}
 
 export default function SimulationLab() {
-  const presets = useMemo(() => presetConfigs(), []);
-  const [state, setState] = useState<SimState>(() => createSimState(presets[1]));
-  const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
-  const [saved, setSaved] = useState<string[]>(() => savedConfigNames());
-  const [showHexes, setShowHexes] = useState(true);
-  const [selectedAuto, setSelectedAuto] = useState<string | null>(null);
-  const [bench, setBench] = useState("Measuring how fast a nearby search is…");
-  const [draft, setDraft] = useState({ name: "", kind: "student" as "student" | "driver", place: CAMPUS_PLACES[0].id });
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  const [stage, setStage] = useState<Stage>("pool");
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [autos, setAutos] = useState<RideAuto[]>(freshAutos);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [tick, setTick] = useState(0);
+  const [sameStarted, setSameStarted] = useState(false);
+  const guests = useRef(0);
+  const timers = useRef<number[]>([]);
 
-  useEffect(() => {
-    if (!playing) return;
-    const timer = window.setInterval(() => {
-      void advanceSim(stateRef.current, 250 * speed).then(setState);
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [playing, speed]);
-
-  useEffect(() => {
-    const campus = benchmarkSpatialLookup(50, 200, 0.015);
-    const city = benchmarkSpatialLookup(5000, 200, 0.45);
-    setBench(
-      `Measured in this browser, 200 searches. Fifty autos on a campus: checking every auto took ${campus.linearMs.toFixed(1)} ms and opened ${campus.linearInspected.toFixed(0)} autos; hex cells took ${campus.h3Ms.toFixed(1)} ms and opened ${campus.h3Inspected.toFixed(0)}. Five thousand autos spread across a city: checking every auto took ${city.linearMs.toFixed(1)} ms and opened ${city.linearInspected.toFixed(0)}; hex cells took ${city.h3Ms.toFixed(1)} ms and opened ${city.h3Inspected.toFixed(0)}. Both ways kept the same nearby autos. Hexes help when the fleet is spread across a city. On one campus they mostly show where students are asking.`,
-    );
-  }, []);
-
-  const metrics = simMetrics(state);
-  const comparison = compareCurrent(state);
-  const hexes = showHexes ? demandHexes(state.rides.map((ride) => ride.pickup), CAMPUS_CENTER, 5) : [];
-
-  const mapDrivers = state.drivers.map((driver, index) => {
-    const aboard = ridesOnAuto(state.rides, driver.id);
-    const spot = spreadPoint(driver.id, driver.location.lat, driver.location.lng);
-    const color = autoColor(index);
-    return {
-      id: driver.id,
-      name: driver.name,
-      lat: spot.lat,
-      lng: spot.lng,
-      status: driver.status,
-      color: selectedAuto && selectedAuto !== driver.id ? "#9ca3af" : color,
-      badge: driver.name,
-      detail: `${aboard.length}/${driver.capacity} students`,
-    };
-  });
-
-  const mapStudents = state.config.students.map((student) => {
-    const ride = latestRide(state.rides, student.id);
-    const driverIndex = ride?.driverId ? state.drivers.findIndex((driver) => driver.id === ride.driverId) : -1;
-    const color = driverIndex >= 0 ? autoColor(driverIndex) : "#1d4ed8";
-    const spot = spreadPoint(student.id, student.pickup.lat, student.pickup.lng);
-    return {
-      id: student.id,
-      name: student.name,
-      lat: spot.lat,
-      lng: spot.lng,
-      color,
-      badge: student.name,
-      detail: ride
-        ? `${student.name}: ${ridePhrase(ride.status)}. ${student.pickupLabel} to ${student.dropLabel}.`
-        : `${student.name} has not asked yet. Pickup will be ${student.pickupLabel}.`,
-    };
-  });
-
-  const links = state.rides
-    .filter((ride) => ride.driverId && ["OFFERED", "ACCEPTED", "OTP_VERIFIED", "IN_PROGRESS"].includes(ride.status))
-    .map((ride) => {
-      const driver = state.drivers.find((item) => item.id === ride.driverId);
-      const driverIndex = state.drivers.findIndex((item) => item.id === ride.driverId);
-      if (!driver) return null;
-      const from = spreadPoint(driver.id, driver.location.lat, driver.location.lng);
-      const to = spreadPoint(ride.studentId, ride.pickup.lat, ride.pickup.lng);
-      const aboard = ridesOnAuto(state.rides, driver.id);
-      return {
-        id: ride.id,
-        from: [from.lat, from.lng] as [number, number],
-        to: [to.lat, to.lng] as [number, number],
-        color: autoColor(Math.max(driverIndex, 0)),
-        label: `${ride.studentName} is assigned to ${driver.name}. That auto has ${aboard.length} of ${driver.capacity} students.`,
-        strong: !selectedAuto || selectedAuto === driver.id,
-      };
-    })
-    .filter((link): link is NonNullable<typeof link> => link !== null);
-
-  function load(config: SimConfig) {
-    setPlaying(false);
-    setSelectedAuto(null);
-    setState(createSimState(config));
+  function clearTimers() {
+    timers.current.forEach((id) => window.clearTimeout(id));
+    timers.current = [];
   }
 
-  function updateConfig(recipe: (config: SimConfig) => SimConfig) {
-    setPlaying(false);
-    setState(createSimState(recipe(state.config)));
+  function resetAll() {
+    clearTimers();
+    guests.current = 0;
+    setPhase("idle");
+    setAutos(freshAutos());
+    setStartedAt(null);
+    setSameStarted(false);
+    setTick(0);
   }
 
-  function addPerson() {
-    const place = CAMPUS_PLACES.find((item) => item.id === draft.place) ?? CAMPUS_PLACES[0];
-    const drop = CAMPUS_PLACES[(CAMPUS_PLACES.indexOf(place) + 3) % CAMPUS_PLACES.length];
-    updateConfig((config) => {
-      if (draft.kind === "student") {
-        const student: SimStudent = {
-          id: `s-${Date.now()}`,
-          name: draft.name || `Student ${config.students.length + 1}`,
-          pickupLabel: place.name,
-          dropLabel: drop.name,
-          pickup: { lat: place.lat, lng: place.lng },
-          drop: { lat: drop.lat, lng: drop.lng },
-        };
-        return {
-          ...config,
-          students: [...config.students, student],
-          schedule: [...config.schedule, { at: 1000 + config.schedule.length * 1000, studentId: student.id }],
-        };
+  function choose(next: Stage) {
+    resetAll();
+    setStage(next);
+  }
+
+  function startPool() {
+    clearTimers();
+    guests.current = 0;
+    const now = Date.now();
+    setStartedAt(now);
+    setPhase("live");
+    setAutos(freshAutos().map((auto) => ({ ...auto, status: "waiting" })));
+    const leave = window.setTimeout(() => {
+      const departed = Date.now();
+      setAutos((current) => current.map((auto) => (
+        auto.side === "now" && auto.status === "waiting"
+          ? { ...auto, status: "riding", departedAt: departed }
+          : auto
+      )));
+    }, 2000);
+    timers.current.push(leave);
+  }
+
+  function addPeople(count: number) {
+    if (phase !== "live") return;
+    const next = autos.map((auto) => ({ ...auto, seats: [...auto.seats] }));
+    let left = count;
+    const waiting = next
+      .filter((auto) => auto.side === "old" && auto.status === "waiting")
+      .sort((a, b) => (a.capacity - a.seats.length) - (b.capacity - b.seats.length));
+    for (const auto of waiting) {
+      while (left > 0 && auto.seats.length < auto.capacity) {
+        guests.current += 1;
+        const to = auto.id === "old-agira" ? "Library" : "Auditorium";
+        auto.seats.push({ id: `guest-${guests.current}`, name: `Guest ${guests.current}`, to });
+        left -= 1;
       }
-      const driver: DriverRecord = {
-        id: `d-${Date.now()}`,
-        name: draft.name || `Auto ${config.drivers.length + 1}`,
-        location: { lat: place.lat, lng: place.lng },
-        capacity: 4,
-        passengerCount: 0,
-        status: "available",
-        completedRides: 0,
-        route: [],
-        version: 0,
-      };
-      return { ...config, drivers: [...config.drivers, driver] };
-    });
-    setDraft({ ...draft, name: "" });
+      if (auto.seats.length >= auto.capacity) {
+        auto.status = "riding";
+        auto.departedAt = Date.now();
+      }
+    }
+    setAutos(next);
   }
 
-  const waiting = waitingRides(state.rides);
-  const done = finishedRides(state.rides);
-  const notYet = state.config.students.filter((student) => !state.rides.some((ride) => ride.studentId === student.id));
-  const samePlan = Math.abs(comparison.greedy.pickupKm - comparison.hungarian.pickupKm) < 0.01;
+  useEffect(() => {
+    if (phase !== "live") return;
+    const id = window.setInterval(() => setTick((value) => value + 1), 250);
+    return () => window.clearInterval(id);
+  }, [phase]);
+
+  useEffect(() => () => clearTimers(), []);
+
+  const oldAutos = autos.filter((auto) => auto.side === "old");
+  const nowAutos = autos.filter((auto) => auto.side === "now");
+  const oldStillWaiting = oldAutos.some((auto) => auto.status === "waiting");
 
   return (
-    <div className="min-h-screen bg-[#f6f4f2] text-gray-900">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-6 py-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-[#7B0000]">Practice dispatch · not the live campus</p>
-            <h1 className="text-2xl font-semibold">Who is in which auto</h1>
+    <div className="min-h-screen bg-[#f3f0ea] text-gray-950">
+      <header className="sticky top-0 z-20 border-b border-black/5 bg-[#f3f0ea]/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-4">
+          <Link to="/" className="text-sm font-medium text-gray-500">Campus Ride</Link>
+          <div className="mx-auto flex rounded-full bg-white p-1 shadow-sm">
+            <StageTab active={stage === "pool"} onClick={() => choose("pool")}>1 · Waiting for 4</StageTab>
+            <StageTab active={stage === "same"} onClick={() => choose("same")}>2 · Same second</StageTab>
           </div>
-          <div className="flex gap-3 text-sm">
-            <Link to="/admin" className="rounded-full border border-gray-300 px-4 py-2">Admin</Link>
-            <Link to="/" className="rounded-full bg-[#7B0000] px-4 py-2 text-white">Home</Link>
-          </div>
+          {stage === "pool" ? (
+            phase === "idle" ? (
+              <button className="rounded-full bg-[#7B0000] px-7 py-3 text-base font-semibold text-white" onClick={startPool}>Start</button>
+            ) : (
+              <button className="rounded-full border border-gray-300 bg-white px-6 py-3 text-base font-semibold" onClick={resetAll}>Run again</button>
+            )
+          ) : (
+              <button
+              className="rounded-full bg-[#7B0000] px-7 py-3 text-base font-semibold text-white"
+              onClick={() => setSameStarted((value) => !value)}
+            >
+              {sameStarted ? "Reset" : "Start"}
+            </button>
+          )}
         </div>
       </header>
 
-      <div className="border-b border-gray-200 bg-white">
-        <div className="mx-auto grid max-w-[1440px] gap-3 px-6 py-3 text-sm text-gray-700 md:grid-cols-3">
-          <p><span className="font-semibold text-gray-900">Student.</span> A person asking to go from one campus place to another. Blue until an auto is assigned, then the same color as that auto.</p>
-          <p><span className="font-semibold text-gray-900">Auto.</span> One e-rickshaw. It has 4 seats. The badge says how many students are on it right now, for example 2/4.</p>
-          <p><span className="font-semibold text-gray-900">Line.</span> That student is assigned to that auto. A hex is a map cell: darker means more students asked for a ride there.</p>
-        </div>
-      </div>
-
-      <main className="mx-auto grid max-w-[1440px] gap-4 px-6 py-4 lg:grid-cols-[250px_minmax(0,1fr)_340px]">
-        <section className="space-y-4">
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="font-semibold">Scenarios</h2>
-            <p className="mt-1 text-xs text-gray-500">Pick one, then press Start. The clock is fake and stays in this browser.</p>
-            <div className="mt-3 space-y-2">
-              {presets.map((preset) => (
-                <button
-                  key={preset.name}
-                  onClick={() => load(preset)}
-                  className={`block w-full rounded-lg border px-3 py-2 text-left text-sm ${state.config.name === preset.name ? "border-[#7B0000] bg-[#7B0000]/5" : "border-gray-200"}`}
-                >
-                  <span className="font-medium">{preset.name}</span>
-                  <span className="mt-1 block text-xs text-gray-500">{SCENARIO_HELP[preset.name]}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm">
-            <h2 className="font-semibold">Clock</h2>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button className="rounded-lg bg-[#7B0000] px-3 py-2 text-white" onClick={() => setPlaying(true)}>Start</button>
-              <button className="rounded-lg border px-3 py-2" onClick={() => setPlaying(false)}>Pause</button>
-              <button className="rounded-lg border px-3 py-2" onClick={() => void advanceSim(state, 1000).then(setState)}>Step 1s</button>
-              <button className="rounded-lg border px-3 py-2" onClick={() => load(state.config)}>Reset</button>
-            </div>
-            <div className="mt-3 flex gap-2">
-              {SPEEDS.map((value) => (
-                <button key={value} onClick={() => setSpeed(value)} className={`rounded-lg border px-2 py-1 ${speed === value ? "border-[#7B0000]" : ""}`}>{value}x</button>
-              ))}
-            </div>
-            <p className="mt-3 text-gray-600">Simulated time {formatSimTime(state.now)}</p>
-            <label className="mt-3 block">How an auto is chosen
-              <select className="mt-1 w-full rounded-lg border px-2 py-2" value={state.config.strategy} onChange={(event) => updateConfig((config) => ({ ...config, strategy: event.target.value as MatchStrategy }))}>
-                <option value="greedy">Greedy: first student gets the closest auto</option>
-                <option value="hungarian">Hungarian: all waiting students are matched together</option>
-                <option value="pool">Pooling: one auto can carry several students</option>
-              </select>
-            </label>
-            <label className="mt-3 block">If two students want the last seat
-              <select className="mt-1 w-full rounded-lg border px-2 py-2" value={state.config.safety} onChange={(event) => updateConfig((config) => ({ ...config, safety: event.target.value as SafetyMode }))}>
-                <option value="safe">Safe: only one student gets the seat</option>
-                <option value="unsafe">Unsafe: both can be written onto the same seat</option>
-              </select>
-            </label>
-            <label className="mt-3 block">Which autos are even considered
-              <select className="mt-1 w-full rounded-lg border px-2 py-2" value={state.config.lookup ?? "all"} onChange={(event) => updateConfig((config) => ({ ...config, lookup: event.target.value as SimConfig["lookup"] }))}>
-                <option value="all">Every auto, then road distance</option>
-                <option value="linear">Only autos inside {CAMPUS_LOOKUP_RADIUS_M} m (straight line)</option>
-                <option value="h3">Only autos in this hex and its neighbours</option>
-              </select>
-            </label>
-            <label className="mt-3 flex items-center gap-2">
-              <input type="checkbox" checked={state.config.useRoads} onChange={(event) => updateConfig((config) => ({ ...config, useRoads: event.target.checked }))} />
-              Measure the trip on campus roads
-            </label>
-            <label className="mt-2 flex items-center gap-2">
-              <input type="checkbox" checked={showHexes} onChange={(event) => setShowHexes(event.target.checked)} />
-              Show demand hexes
-            </label>
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-white">
-            <FleetMap drivers={mapDrivers} students={mapStudents} rides={state.rides} hexes={hexes} links={links} />
-            <div className="pointer-events-none absolute bottom-3 left-3 z-[500] max-w-xs rounded-lg bg-white/95 p-3 text-xs shadow">
-              <p className="font-semibold">On the map</p>
-              <p className="mt-1 text-gray-600">Colored badge = one auto, with students on board / 4 seats. White badge = a student. A line joins a student to their auto. A red hex has requests.</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Metric label="Students who asked" value={String(metrics.requests)} hint="Ride requests so far" />
-            <Metric label="Matched to an auto" value={String(metrics.assigned)} hint="Offered, riding, or dropped off" />
-            <Metric label="Still waiting" value={String(metrics.pending)} hint="No seat yet" />
-            <Metric label="Autos busy" value={`${Math.round(metrics.utilization * 100)}%`} hint="Autos that have a student" />
-            <Metric label="Average wait" value={`${metrics.avgWaitMin.toFixed(1)} min`} hint="From request to offer" />
-            <Metric label="Average pickup" value={`${metrics.avgPickupKm.toFixed(2)} km`} hint="How far the auto drives to the student" />
-            <Metric label="Seat fights" value={String(metrics.lockConflicts)} hint="A seat was taken before this student got it" />
-            <Metric label="Double bookings" value={String(metrics.doubleBookings)} hint="Unsafe mode put two students on one seat" />
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm">
-            <h2 className="font-semibold">Same students, two ways of choosing</h2>
-            <p className="mt-2 text-gray-700">
-              {samePlan
-                ? `Both methods send the autos ${comparison.greedy.pickupKm.toFixed(2)} km in total to the pickups.`
-                : `First-come matching sends the autos ${comparison.greedy.pickupKm.toFixed(2)} km to the pickups. Matching everyone together sends them ${comparison.hungarian.pickupKm.toFixed(2)} km.`}
-            </p>
-            <p className="mt-2 text-gray-500">These numbers are calculated from the students and autos on screen. They are not a saved score.</p>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-600">
-            <h2 className="font-semibold text-gray-900">Why the hexes are not the distance</h2>
-            <p className="mt-2">{bench}</p>
-            <p className="mt-2">After the shortlist, the trip length still comes from the campus roads when that box is ticked, or from a straight line when it is not. A hex only means “look around here”.</p>
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="font-semibold">Autos and their students</h2>
-            <p className="mt-1 text-xs text-gray-500">Click an auto to highlight its lines. Capacity is 4 students unless a scenario says otherwise.</p>
-            <div className="mt-3 space-y-3">
-              {state.drivers.map((driver, index) => {
-                const aboard = ridesOnAuto(state.rides, driver.id);
-                return (
-                  <button
-                    key={driver.id}
-                    onClick={() => setSelectedAuto(selectedAuto === driver.id ? null : driver.id)}
-                    className={`block w-full rounded-lg border p-3 text-left ${selectedAuto === driver.id ? "border-[#7B0000]" : "border-gray-200"}`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-semibold" style={{ color: autoColor(index) }}>{driver.name}</p>
-                      <p className="text-sm font-semibold">{aboard.length}/{driver.capacity}</p>
-                    </div>
-                    <p className="text-xs text-gray-500">{driver.plate ?? "Campus auto"} · {driver.status === "offline" ? "not in service" : "in service"}</p>
-                    <p className="mt-2 text-sm text-gray-700">{autoPhrase(driver, aboard.length)}</p>
-                    {aboard.length === 0 && driver.status !== "offline" && (
-                      <p className="mt-2 text-sm text-gray-500">No student is assigned to this auto.</p>
-                    )}
-                    <ul className="mt-2 space-y-2">
-                      {aboard.map((ride) => (
-                        <li key={ride.id} className="rounded-md bg-gray-50 px-2 py-2 text-sm">
-                          <span className="font-medium">{ride.studentName}</span>
-                          <span className="block text-xs text-gray-600">{ride.pickupLabel} → {ride.dropLabel}</span>
-                          <span className="block text-xs text-gray-500">{ridePhrase(ride.status)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm">
-            <h2 className="font-semibold">Not on an auto</h2>
-            {waiting.length === 0 && notYet.length === 0 && <p className="mt-2 text-gray-500">Everyone who has asked is matched, riding, or already dropped off.</p>}
-            <ul className="mt-2 space-y-2">
-              {waiting.map((ride) => (
-                <li key={ride.id}>
-                  <span className="font-medium">{ride.studentName}</span>
-                  <span className="block text-xs text-gray-600">{ride.pickupLabel} → {ride.dropLabel}. {ridePhrase(ride.status)}. {ride.reasons[0] ?? ""}</span>
-                </li>
-              ))}
-              {notYet.map((student) => (
-                <li key={student.id}>
-                  <span className="font-medium">{student.name}</span>
-                  <span className="block text-xs text-gray-600">Has not asked yet. Will go from {student.pickupLabel} to {student.dropLabel}.</span>
-                </li>
-              ))}
-            </ul>
-            {done.length > 0 && (
-              <div className="mt-4">
-                <h3 className="font-medium">Dropped off</h3>
-                <ul className="mt-2 space-y-1 text-xs text-gray-600">
-                  {done.map((ride) => {
-                    const auto = state.drivers.find((driver) => driver.id === ride.driverId);
-                    return <li key={ride.id}>{ride.studentName} finished with {auto?.name ?? "an auto"} ({ride.pickupLabel} → {ride.dropLabel}).</li>;
-                  })}
-                </ul>
-              </div>
-            )}
-          </div>
-        </section>
-      </main>
-
-      <section className="mx-auto grid max-w-[1440px] gap-4 px-6 pb-8 lg:grid-cols-[1fr_280px]">
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <h2 className="font-semibold">What just happened</h2>
-          <div className="mt-3 max-h-72 space-y-2 overflow-auto text-sm">
-            {state.events.length === 0 && <p className="text-gray-500">Press Start. Students ask on the scenario’s schedule, then an auto is named and the seat count changes.</p>}
-            {[...state.events].reverse().map((event) => (
-              <p key={event.id} className="border-b border-gray-100 pb-2 text-gray-800">{event.message}</p>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm">
-          <h2 className="font-semibold">Add someone</h2>
-          <input className="mt-3 w-full rounded-lg border px-2 py-2" placeholder="Name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-          <select className="mt-2 w-full rounded-lg border px-2 py-2" value={draft.kind} onChange={(event) => setDraft({ ...draft, kind: event.target.value as "student" | "driver" })}>
-            <option value="student">Student</option>
-            <option value="driver">Auto</option>
-          </select>
-          <select className="mt-2 w-full rounded-lg border px-2 py-2" value={draft.place} onChange={(event) => setDraft({ ...draft, place: event.target.value })}>
-            {CAMPUS_PLACES.map((place) => <option key={place.id} value={place.id}>{place.name}</option>)}
-          </select>
-          <button className="mt-3 w-full rounded-lg border px-3 py-2" onClick={addPerson}>Add to this world</button>
-          <button className="mt-2 w-full rounded-lg border px-3 py-2" onClick={() => { saveSimConfig(state.config); setSaved(savedConfigNames()); }}>Save this world in the browser</button>
-          {saved.map((name) => (
-            <button key={name} className="mt-2 block w-full text-left text-[#7B0000]" onClick={() => { const config = loadSimConfig(name); if (config) load(config); }}>{name}</button>
-          ))}
-        </div>
-      </section>
+      {stage === "pool" ? (
+        <PoolStage
+          oldAutos={oldAutos}
+          nowAutos={nowAutos}
+          startedAt={startedAt}
+          canAdd={phase === "live" && oldStillWaiting}
+          onAdd={addPeople}
+        />
+      ) : (
+        <SameSecond started={sameStarted} />
+      )}
     </div>
   );
 }
 
-function latestRide(rides: Ride[], studentId: string): Ride | undefined {
-  return rides.find((ride) => ride.studentId === studentId);
+function StageTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full px-5 py-2 text-sm font-semibold ${active ? "bg-[#1c1917] text-white" : "text-gray-600"}`}
+    >
+      {children}
+    </button>
+  );
 }
 
-function Metric({ label, value, hint }: { label: string; value: string; hint: string }) {
+function PoolStage({
+  oldAutos,
+  nowAutos,
+  startedAt,
+  canAdd,
+  onAdd,
+}: {
+  oldAutos: RideAuto[];
+  nowAutos: RideAuto[];
+  startedAt: number | null;
+  canAdd: boolean;
+  onAdd: (count: number) => void;
+}) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold">{value}</p>
-      <p className="text-xs text-gray-400">{hint}</p>
-    </div>
+    <>
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <p className="max-w-3xl text-lg text-gray-600">
+          Riya, Arjun and Sara are at Agira Hall. Kabir is at Prithvi Hall, next door. Two of them are going to the Library. Two are going to the Auditorium.
+        </p>
+        <div className="mt-8 grid items-start gap-6 lg:grid-cols-2">
+          <Column
+            kicker="Earlier"
+            title="Each auto waits for 4 people"
+            tone="old"
+            autos={oldAutos}
+            startedAt={startedAt}
+          />
+          <Column
+            kicker="This project"
+            title="People going to the same place leave together"
+            tone="now"
+            autos={nowAutos}
+            startedAt={startedAt}
+          />
+        </div>
+      </main>
+      <div className="sticky bottom-0 border-t border-black/5 bg-[#f3f0ea]/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
+          <p className="text-sm text-gray-500">Add people to the earlier autos. An auto leaves the moment it has 4.</p>
+          <div className="flex gap-3">
+            <AddButton disabled={!canAdd} onClick={() => onAdd(1)}>+ 1 person</AddButton>
+            <AddButton disabled={!canAdd} onClick={() => onAdd(2)}>+ 2 people</AddButton>
+            <AddButton disabled={!canAdd} onClick={() => onAdd(8)}>Fill the seats</AddButton>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Column({
+  kicker,
+  title,
+  tone,
+  autos,
+  startedAt,
+}: {
+  kicker: string;
+  title: string;
+  tone: "old" | "now";
+  autos: RideAuto[];
+  startedAt: number | null;
+}) {
+  return (
+    <section className={`rounded-3xl p-5 ${tone === "now" ? "bg-white shadow-sm ring-1 ring-[#7B0000]/15" : "bg-white/60"}`}>
+      <p className={`text-xs font-semibold uppercase tracking-[0.16em] ${tone === "now" ? "text-[#7B0000]" : "text-gray-400"}`}>{kicker}</p>
+      <h2 className="mt-2 text-2xl font-semibold leading-tight">{title}</h2>
+      <div className="mt-5 space-y-4">
+        {autos.map((auto) => (
+          <AutoCard key={auto.id} auto={auto} seconds={waitedSeconds(auto, startedAt)} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AutoCard({ auto, seconds }: { auto: RideAuto; seconds: number }) {
+  const empties = Math.max(0, auto.capacity - auto.seats.length);
+  const statusLine = auto.status === "idle"
+    ? "Not started"
+    : auto.status === "waiting"
+      ? "Waiting"
+      : "Left";
+
+  return (
+    <article className="rounded-2xl bg-[#faf8f6] p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold">{auto.title}</h3>
+          <p className="mt-1 text-sm text-gray-500">
+            {auto.side === "old"
+              ? `${auto.seats.length} of ${auto.capacity} seats`
+              : `${auto.seats.length} students, same destination`}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-4xl font-semibold tabular-nums leading-none">{clock(seconds)}</p>
+          <p className="mt-1 text-sm text-gray-500">{statusLine}</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {auto.seats.map((person) => (
+          <span key={person.id} className="min-w-[108px] rounded-2xl bg-white px-3 py-3 shadow-sm">
+            <span className="block text-sm font-semibold">{person.name}</span>
+            <span className="block text-xs text-gray-500">{person.to}</span>
+          </span>
+        ))}
+        {auto.side === "old" && Array.from({ length: empties }, (_, index) => (
+          <span
+            key={`${auto.id}-empty-${index}`}
+            className={`grid min-w-[108px] place-items-center rounded-2xl border border-dashed border-gray-300 px-3 py-3 text-sm text-gray-400 ${auto.status === "waiting" ? "seat-wait" : ""}`}
+          >
+            Empty
+          </span>
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+        {auto.route.map((stop, index) => (
+          <span key={`${auto.id}-${stop}-${index}`} className="flex items-center gap-2">
+            {index > 0 && <span className="text-gray-300">→</span>}
+            {stop}
+          </span>
+        ))}
+      </div>
+      <p className="mt-4 text-sm text-gray-500">
+        {auto.status === "riding"
+          ? `Waited ${clock(seconds)} · ride ${minutesLabel(auto.rideMin)}`
+          : auto.side === "old"
+            ? "Stays here until 4 seats are full"
+            : "Leaves with this group. It does not wait for 4."}
+      </p>
+    </article>
+  );
+}
+
+function AddButton({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: string }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className="rounded-full bg-[#1c1917] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+    >
+      {children}
+    </button>
+  );
+}
+
+function driverAt(id: string, name: string, place: { lat: number; lng: number }): DriverRecord {
+  return {
+    id,
+    name,
+    location: { lat: place.lat, lng: place.lng },
+    capacity: 4,
+    passengerCount: 0,
+    status: "available",
+    completedRides: 0,
+    route: [],
+    version: 0,
+  };
+}
+
+function requestAt(
+  id: string,
+  name: string,
+  pickup: { lat: number; lng: number },
+  pickupLabel: string,
+  drop: { lat: number; lng: number },
+): RideRequest {
+  return {
+    id,
+    studentId: id,
+    studentName: name,
+    pickup,
+    pickupLabel,
+    drop,
+    dropLabel: "Central Library",
+    seats: 1,
+    createdAt: 0,
+    idempotencyKey: id,
+  };
+}
+
+function SameSecond({ started }: { started: boolean }) {
+  const decision = useMemo(() => {
+    const drivers = [
+      driverAt("near-west", "Auto 1", NEERAM),
+      driverAt("near-east", "Auto 2", AUDI),
+    ];
+    const students = [
+      { name: "Aarav", from: "Prithvi Hall", request: requestAt("aarav", "Aarav", PRITHVI, "Prithvi Hall", LIBRARY) },
+      { name: "Mehak", from: "E Block", request: requestAt("mehak", "Mehak", EBLOCK, "E Block", LIBRARY) },
+    ];
+    const used = new Set<string>();
+    const rankedStudents = [...students].sort((a, b) => {
+      const aBest = Math.min(...drivers.map((driver) => scoreDriver(driver, a.request).pickupKm));
+      const bBest = Math.min(...drivers.map((driver) => scoreDriver(driver, b.request).pickupKm));
+      return aBest - bBest;
+    });
+    return rankedStudents.map((student) => {
+      const ranked = drivers
+        .map((driver) => ({ driver, score: scoreDriver(driver, student.request) }))
+        .sort((a, b) => a.score.pickupKm - b.score.pickupKm);
+      const chosen = ranked.find((item) => !used.has(item.driver.id)) ?? ranked[0];
+      used.add(chosen.driver.id);
+      const other = ranked.find((item) => item.driver.id !== chosen.driver.id) ?? ranked[1];
+      return { ...student, chosen, other };
+    });
+  }, []);
+
+  const links = started
+    ? decision.map((item) => ({
+      id: item.request.id,
+      from: [item.chosen.driver.location.lat, item.chosen.driver.location.lng] as [number, number],
+      to: [item.request.pickup.lat, item.request.pickup.lng] as [number, number],
+      color: item.chosen.driver.id === "near-west" ? "#111827" : "#9a3412",
+      label: `${item.chosen.driver.name} takes ${item.name}. Pickup ${item.chosen.score.pickupKm.toFixed(2)} km.`,
+      strong: true,
+    }))
+    : [];
+
+  return (
+    <main className="mx-auto max-w-6xl px-6 py-8">
+      <p className="max-w-3xl text-lg text-gray-600">
+        Aarav at Prithvi Hall and Mehak at E Block both ask for the Library at the same moment. Two autos are free.
+      </p>
+      <div className="mt-6 overflow-hidden rounded-3xl bg-white shadow-sm">
+        <FleetMap
+          drivers={decision[0] ? [
+            { id: "near-west", name: "Auto 1", lat: NEERAM.lat, lng: NEERAM.lng, badge: "Auto 1", detail: "Neeram Hall", color: "#111827" },
+            { id: "near-east", name: "Auto 2", lat: AUDI.lat, lng: AUDI.lng, badge: "Auto 2", detail: "Auditorium", color: "#9a3412" },
+          ] : []}
+          students={[
+            { id: "aarav", name: "Aarav", lat: PRITHVI.lat, lng: PRITHVI.lng, badge: "Aarav", detail: "Prithvi Hall", color: "#1d4ed8" },
+            { id: "mehak", name: "Mehak", lat: EBLOCK.lat, lng: EBLOCK.lng, badge: "Mehak", detail: "E Block", color: "#1d4ed8" },
+          ]}
+          links={links}
+        />
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        {decision.map((item) => (
+          <article key={item.name} className="rounded-3xl bg-white p-6 shadow-sm">
+            <p className="text-sm text-gray-500">{item.from} → Library</p>
+            <h2 className="mt-1 text-3xl font-semibold">{item.name}</h2>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              {[item.chosen, item.other].sort((a, b) => a.score.pickupKm - b.score.pickupKm).map((option) => {
+                const won = started && option.driver.id === item.chosen.driver.id;
+                const lost = started && option.driver.id !== item.chosen.driver.id;
+                return (
+                  <div key={option.driver.id} className={`rounded-2xl p-4 ${won ? "bg-[#1c1917] text-white" : "bg-[#f6f3ef] text-gray-900"} ${lost ? "opacity-50" : ""}`}>
+                    <p className="text-sm">{option.driver.name}</p>
+                    <p className="mt-2 text-4xl font-semibold tabular-nums">{option.score.pickupKm.toFixed(2)}</p>
+                    <p className={`text-sm ${won ? "text-white/70" : "text-gray-500"}`}>km · {option.score.etaMin.toFixed(1)} min</p>
+                    <p className={`mt-3 text-sm font-medium ${won ? "text-white" : "text-gray-400"}`}>{won ? "Offered" : lost ? "Not offered" : "Pickup"}</p>
+                  </div>
+                );
+              })}
+            </div>
+            {started && (
+              <p className="mt-4 text-sm leading-6 text-gray-600">
+                {item.chosen.driver.name} is {item.chosen.score.pickupKm.toFixed(2)} km away. {item.other.driver.name} is {item.other.score.pickupKm.toFixed(2)} km away, so that seat is not offered.
+              </p>
+            )}
+          </article>
+        ))}
+      </div>
+      <p className="mx-auto mt-6 max-w-3xl text-center text-base leading-7 text-gray-600">
+        Both requests have the same time, so neither student is first in line. The score is mostly the pickup time. Extra route and seats already taken are part of it too. Here both autos are empty, so the shorter pickup is offered.
+      </p>
+    </main>
   );
 }

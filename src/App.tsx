@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 
 import Landing from "./pages/Landing";
 import StudentAuth from "./pages/auth/StudentAuth";
@@ -41,13 +41,17 @@ function App() {
             {/* must be last */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          <StageFooter />
         </BrowserRouter>
-
-        {/* footer always at bottom */}
-        <Footer />
       </TooltipProvider>
     </QueryClientProvider>
   );
+}
+
+function StageFooter() {
+  const { pathname } = useLocation();
+  if (pathname === "/lab") return null;
+  return <Footer />;
 }
 
 export default App;
