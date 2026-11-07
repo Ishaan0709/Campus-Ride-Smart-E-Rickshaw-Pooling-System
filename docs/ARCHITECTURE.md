@@ -7,6 +7,7 @@ The browser app is the only runtime. Firebase Auth and Firestore store accounts 
 `src/engine` is plain TypeScript. It does not import React or Firebase.
 
 - Haversine distance, with an optional campus graph and Dijkstra through `roadDistanceKm`.
+- Nearby autos can be listed by checking every auto or by an H3 hex cell and its neighbours. That list is only a shortlist. The road distance still decides the match.
 - Greedy matching assigns each request, in arrival order, to the lowest-cost feasible driver.
 - Hungarian matching solves the one-request-per-driver cost matrix.
 - Pooling uses cheapest insertion and rejects a plan that exceeds capacity or the maximum detour.

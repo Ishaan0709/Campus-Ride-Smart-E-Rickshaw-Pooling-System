@@ -249,6 +249,19 @@ App will run at:
 
 http://localhost:5173
 
+## Nearby search: every auto, or hex cells
+
+Uber draws hexagonal cells because it has to search millions of drivers. This campus has a few dozen e-rickshaws, so the dispatch engine checks every auto and then measures the trip on the campus road graph with Dijkstra. The hex grid is still available, behind the same `SpatialIndex` port, and the Simulation Lab can draw those cells as a demand heatmap.
+
+A measured run of 100 searches (`npm test`, this machine):
+
+| Fleet | Check every auto | Hex cells |
+|---|---|---|
+| 50 autos on a campus | 0.52 ms, opened 50, kept about 28 | 7.36 ms, opened 49, kept about 28 |
+| 5,000 autos across a city | 22.07 ms, opened 5,000, kept about 79 | 5.47 ms, opened 193, kept about 79 |
+
+Both methods kept the same nearby autos. Hex cells are worth it when the fleet is spread across a city. On one campus the extra cell math is slower, and the cells are used to show where students are asking.
+
 📌 Future Improvements
 
 Real-time driver location from GPS

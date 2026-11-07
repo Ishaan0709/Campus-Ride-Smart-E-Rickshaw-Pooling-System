@@ -2,6 +2,7 @@ import { claimSeat, releaseSeat } from "@/engine/concurrency/claim";
 import { dispatchRequests, previewStrategies } from "@/engine/dispatchEngine";
 import { transitionRide } from "@/engine/rideStateMachine";
 import { MemoryClaimStore } from "@/engine/ports";
+import { CAMPUS_LOOKUP_RADIUS_M, H3Index, LinearScanIndex } from "@/engine/spatial/spatialIndex";
 import type {
   DriverRecord,
   MatchStrategy,
@@ -35,6 +36,8 @@ export interface SimConfig {
   schedule: { at: number; studentId: string }[];
   strategy: MatchStrategy;
   safety: SafetyMode;
+  /** all checks every auto. linear and h3 only offer autos inside the campus radius. */
+  lookup?: "all" | "linear" | "h3";
   useRoads: boolean;
   maxDetourKm: number;
   offerTimeoutMs: number;
@@ -386,9 +389,40 @@ export async function advanceSim(state: SimState, deltaMs: number): Promise<SimS
   return next;
 }
 
+const ABOARD = ["OFFERED", "ACCEPTED", "OTP_VERIFIED", "IN_PROGRESS"];
+
 async function allocateStudents(state: SimState, students: SimStudent[], excluded: string[] = []) {
-  const requests = students.map((student) => requestFrom(student, state.now));
-  const store = new MemoryClaimStore(state.drivers.filter((driver) => !excluded.includes(driver.id)));
+  const lookup = state.config.lookup ?? "all";
+  if (lookup === "all") {
+    await dispatchBatch(state, students.map((student) => requestFrom(student, state.now)), excluded);
+    return;
+  }
+
+  for (const student of students) {
+    const eligible = state.drivers.filter((driver) => !excluded.includes(driver.id));
+    const index = lookup === "h3" ? new H3Index(eligible) : new LinearScanIndex(eligible);
+    let nearby = index.candidatesNear(student.pickup, CAMPUS_LOOKUP_RADIUS_M);
+    const checked = nearby.length > 0 ? nearby : eligible;
+    const how = nearby.length > 0
+      ? `${nearby.length} of ${eligible.length} autos were inside ${CAMPUS_LOOKUP_RADIUS_M} m`
+      : `no auto was inside ${CAMPUS_LOOKUP_RADIUS_M} m, so all ${eligible.length} autos were checked`;
+    state.events.push(log(
+      state,
+      "lookup",
+      `${formatClock(state.now)} — ${student.name}: ${how}. ${lookup === "h3" ? "Hex cells only made that shortlist." : "A straight-line scan made that shortlist."} Road distance then picked the auto.`,
+    ));
+    await dispatchBatch(state, [requestFrom(student, state.now)], excluded, checked.map((driver) => driver.id));
+  }
+}
+
+async function dispatchBatch(
+  state: SimState,
+  requests: RideRequest[],
+  excluded: string[],
+  onlyIds?: string[],
+) {
+  const pool = state.drivers.filter((driver) => !excluded.includes(driver.id) && (!onlyIds || onlyIds.includes(driver.id)));
+  const store = new MemoryClaimStore(pool);
   const activeIds = store.all().map((driver) => driver.id);
   const result = await dispatchRequests(requests, store, activeIds, {
     strategy: state.config.strategy,
@@ -409,23 +443,38 @@ async function allocateStudents(state: SimState, students: SimStudent[], exclude
     state.rides = [ride, ...state.rides.filter((existing) => existing.id !== ride.id)];
     const driver = state.drivers.find((item) => item.id === allocation.driverId);
     if (allocation.status === "OFFERED" && driver) {
-      state.events.push(log(state, "match", `${formatClock(state.now)} — ${driver.name} selected for ${request.studentName}. Score ${allocation.score?.toFixed(2)}. ${allocation.reasons[0] ?? ""}`));
-      const success = allocation.attempts.find((attempt) => attempt.ok);
-      if (success) {
-        state.events.push(log(state, "lock", `${formatClock(state.now)} — Atomic lock ${state.config.safety === "safe" ? "acquired" : "skipped"} for ${driver.name}, observed version ${success.observedVersion}.`));
-      }
+      const aboard = state.rides.filter((item) => item.driverId === driver.id && ABOARD.includes(item.status));
+      const names = aboard.map((item) => item.studentName).join(", ");
+      state.events.push(log(
+        state,
+        "match",
+        `${formatClock(state.now)} — ${request.studentName} is assigned to ${driver.name}. ${driver.name} now has ${aboard.length} of ${driver.capacity} students: ${names}.`,
+      ));
     } else {
-      state.events.push(log(state, "info", `${formatClock(state.now)} — ${request.studentName} remains pending. ${allocation.reasons[0] ?? ""}`));
+      state.events.push(log(
+        state,
+        "info",
+        `${formatClock(state.now)} — ${request.studentName} is still waiting. ${allocation.reasons[0] ?? "No auto could take this ride."}`,
+      ));
     }
     for (const attempt of allocation.attempts.filter((item) => !item.ok)) {
       state.lockConflicts += 1;
-      state.events.push(log(state, "lock-failure", `${formatClock(state.now)} — ${request.studentName}'s claim on ${attempt.driverId} failed at version ${attempt.observedVersion}.`));
+      const missed = state.drivers.find((item) => item.id === attempt.driverId);
+      state.events.push(log(
+        state,
+        "lock-failure",
+        `${formatClock(state.now)} — ${request.studentName} could not take a seat on ${missed?.name ?? attempt.driverId}. Someone else took it first.`,
+      ));
     }
   }
 
   if (result.doubleBookings > 0) {
     state.doubleBookings += result.doubleBookings;
-    state.events.push(log(state, "double-booking", `${formatClock(state.now)} — Double-booking detected. ${result.doubleBookings} extra claim succeeded against the same driver version.`));
+    state.events.push(log(
+      state,
+      "double-booking",
+      `${formatClock(state.now)} — ${result.doubleBookings} extra student was put on an auto that no longer had that seat. Unsafe mode allows this. Safe mode keeps one seat for one student.`,
+    ));
   }
 }
 
@@ -483,15 +532,26 @@ function moveDrivers(state: SimState, deltaMs: number) {
     const target = driver.route[0];
     const distance = Math.hypot(target.lat - driver.location.lat, target.lng - driver.location.lng);
     const km = distance * 111;
-    if (km <= stepKm) {
+      if (km <= stepKm) {
       const route = driver.route.slice(1);
       const completed = route.length === 0;
       if (completed) {
+        const finished = state.rides.filter(
+          (ride) => ride.driverId === driver.id && ride.status === "IN_PROGRESS",
+        );
         state.rides = state.rides.map((ride) =>
           ride.driverId === driver.id && ride.status === "IN_PROGRESS"
             ? transitionRide(ride, "COMPLETED", state.now)
             : ride,
         );
+        const who = finished.map((ride) => ride.studentName).join(", ");
+        if (who) {
+          state.events.push(log(
+            state,
+            "complete",
+            `${formatClock(state.now)} — ${who} got down from ${driver.name}. ${driver.name} is empty again, 0 of ${driver.capacity} seats filled.`,
+          ));
+        }
       }
       return {
         ...driver,

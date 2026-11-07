@@ -99,3 +99,8 @@ body {
 body {
   @apply bg-[#F7F7F7];
 }
+
+.leaflet-div-icon.campus-pin {
+  background: transparent;
+  border: none;
+}

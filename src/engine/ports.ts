@@ -1,4 +1,12 @@
-import type { DriverRecord } from "./types";
+import type { DriverRecord, GeoPoint } from "./types";
+
+/**
+ * Narrows which autos are worth scoring.
+ * Road distance still decides the match after this list comes back.
+ */
+export interface SpatialIndex {
+  candidatesNear(point: GeoPoint, radiusMeters: number): DriverRecord[];
+}
 
 /** Storage operations the dispatch engine needs. UI and Firebase stay outside. */
 export interface ClaimPort {
