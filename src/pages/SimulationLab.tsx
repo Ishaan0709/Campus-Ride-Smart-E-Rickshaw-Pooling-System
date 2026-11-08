@@ -2,12 +2,11 @@
 import { Link } from "react-router-dom";
 import FleetMap from "@/components/FleetMap";
 import { AlgoDrawer, PoolReveal } from "@/components/LabReveal";
+import RideTheater from "@/components/RideTheater";
 import { claimSeat } from "@/engine/concurrency/claim";
 import { etaMinutes, haversineKm } from "@/engine/distance";
-import { hungarianMatches } from "@/engine/matching/hungarianMatcher";
-import { scoreDriver } from "@/engine/matching/score";
 import { MemoryClaimStore } from "@/engine/ports";
-import type { DriverRecord, RideRequest } from "@/engine/types";
+import type { DriverRecord } from "@/engine/types";
 import { placeById } from "@/lib/campus";
 
 type Stage = "pool" | "same" | "lock";
@@ -36,9 +35,6 @@ const LIBRARY = placeById("library");
 const AUDI = placeById("auditorium");
 const AGIRA = placeById("agira-hall");
 const PRITHVI = placeById("prithvi-hall");
-const NEERAM = placeById("neeram-hall");
-const EBLOCK = placeById("e-block");
-
 const PICKUP_MIN = etaMinutes(haversineKm(AGIRA, PRITHVI) + haversineKm(PRITHVI, LIBRARY));
 const OLD_AGIRA_MIN = etaMinutes(haversineKm(AGIRA, LIBRARY) + haversineKm(LIBRARY, AUDI));
 const OLD_PRITHVI_MIN = etaMinutes(haversineKm(PRITHVI, AUDI));
@@ -107,7 +103,7 @@ function waitedSeconds(auto: RideAuto, startedAt: number | null) {
 }
 
 export default function SimulationLab() {
-  const [stage, setStage] = useState<Stage>("pool");
+  const [stage, setStage] = useState<Stage>("same");
   const [phase, setPhase] = useState<Phase>("idle");
   const [autos, setAutos] = useState<RideAuto[]>(freshAutos);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -202,7 +198,7 @@ export default function SimulationLab() {
           <Link to="/" className="text-sm font-medium text-gray-500">Campus Ride</Link>
           <div className="mx-auto flex shrink-0 rounded-full bg-white p-1 shadow-sm">
             <StageTab active={stage === "pool"} onClick={() => choose("pool")}>1 · The wait</StageTab>
-            <StageTab active={stage === "same"} onClick={() => choose("same")}>2 · Dispatch</StageTab>
+            <StageTab active={stage === "same"} onClick={() => choose("same")}>2 · The ride</StageTab>
             <StageTab active={stage === "lock"} onClick={() => choose("lock")}>3 · Last seat</StageTab>
           </div>
           {stage === "pool" ? (
@@ -238,7 +234,7 @@ export default function SimulationLab() {
           onAdd={addPeople}
         />
       ) : stage === "same" ? (
-        <Dispatch started={sameStarted} />
+        <RideTheater started={sameStarted} />
       ) : (
         <LastSeat started={lockStarted} />
       )}
@@ -428,214 +424,8 @@ function driverAt(id: string, name: string, place: { lat: number; lng: number })
   };
 }
 
-const TAN = placeById("tan");
-
 function shift(place: { lat: number; lng: number }, northM: number, eastM: number) {
   return { lat: place.lat + northM / 111_000, lng: place.lng + eastM / (111_000 * Math.cos(place.lat * Math.PI / 180)) };
-}
-
-interface CastMember {
-  id: string;
-  name: string;
-  from: string;
-  to: string;
-  pickup: { lat: number; lng: number };
-  drop: { lat: number; lng: number };
-  request: RideRequest;
-}
-
-function castMember(
-  id: string,
-  name: string,
-  from: string,
-  pickup: { lat: number; lng: number },
-  to: string,
-  drop: { lat: number; lng: number },
-): CastMember {
-  return {
-    id,
-    name,
-    from,
-    to,
-    pickup,
-    drop,
-    request: {
-      id,
-      studentId: id,
-      studentName: name,
-      pickup,
-      pickupLabel: from,
-      drop,
-      dropLabel: to,
-      seats: 1,
-      createdAt: 0,
-      idempotencyKey: id,
-    },
-  };
-}
-
-function Dispatch({ started }: { started: boolean }) {
-  const [step, setStep] = useState(0);
-  const plan = useMemo(() => {
-    const drivers = [
-      driverAt("auto-1", "Auto 1", NEERAM),
-      driverAt("auto-2", "Auto 2", AUDI),
-      driverAt("auto-3", "Auto 3", LIBRARY),
-      { ...driverAt("auto-4", "Auto 4", AGIRA), passengerCount: 4, status: "occupied" as const },
-    ];
-    const students = [
-      castMember("aarav", "Aarav", "Prithvi Hall", PRITHVI, "Library", LIBRARY),
-      castMember("mehak", "Mehak", "E Block", EBLOCK, "Auditorium", AUDI),
-      castMember("kabir", "Kabir", "TAN Block", TAN, "Library", LIBRARY),
-      castMember("sara", "Sara", "Agira Hall", AGIRA, "Auditorium", AUDI),
-    ];
-    const free = drivers.filter((driver) => driver.passengerCount < driver.capacity);
-    const nearest = students.map((student) => {
-      const ranked = drivers
-        .map((driver) => ({ driver, score: scoreDriver(driver, student.request) }))
-        .sort((a, b) => a.score.pickupKm - b.score.pickupKm);
-      const feasible = ranked.filter((item) => item.score.feasible);
-      return { student, closest: ranked[0], bestFree: feasible[0], secondFree: feasible[1] };
-    });
-    const offers = hungarianMatches(students.map((student) => student.request), free);
-    const offerByStudent = new Map(offers.map((match) => [match.request.id, match]));
-    return { drivers, students, nearest, offerByStudent };
-  }, []);
-
-  useEffect(() => {
-    setStep(0);
-  }, [started]);
-
-  const shown = started ? step : -1;
-  const links = shown < 1 ? [] : plan.students.flatMap((student) => {
-    const row = plan.nearest.find((item) => item.student.id === student.id);
-    const offer = plan.offerByStudent.get(student.id);
-    if (!row) return [];
-    if (shown === 1 && student.id === "sara") {
-      return [{
-        id: "sara-full",
-        from: [AGIRA.lat, AGIRA.lng] as [number, number],
-        to: [AGIRA.lat, AGIRA.lng] as [number, number],
-        color: "#9ca3af",
-        label: "",
-      }];
-    }
-    if (shown === 2 && row.bestFree) {
-      return [{
-        id: `${student.id}-near`,
-        from: [row.bestFree.driver.location.lat, row.bestFree.driver.location.lng] as [number, number],
-        to: [student.pickup.lat, student.pickup.lng] as [number, number],
-        color: "#9ca3af",
-        label: `${row.bestFree.score.pickupKm.toFixed(2)} km`,
-        dash: "6 6",
-      }];
-    }
-    if (shown === 3 && offer) {
-      return [{
-        id: `${student.id}-offer`,
-        from: [offer.driver.location.lat, offer.driver.location.lng] as [number, number],
-        to: [student.pickup.lat, student.pickup.lng] as [number, number],
-        color: offer.driver.id === "auto-1" ? "#111827" : offer.driver.id === "auto-2" ? "#9a3412" : "#166534",
-        label: `${offer.driver.name} · ${offer.score.pickupKm.toFixed(2)} km`,
-        strong: true,
-      }];
-    }
-    return [];
-  }).filter((link) => link.to[0] !== link.from[0] || link.label);
-
-  const steps = [
-    {
-      title: "Four students, one moment",
-      body: "Aarav, Mehak, Kabir and Sara all ask at the same second. Three autos are empty. One auto at Agira is already full, and Sara is standing beside it.",
-    },
-    {
-      title: "The full auto cannot take Sara",
-      body: "Auto 4 has 4 of 4 seats. Distance does not matter: a full auto is not a candidate. Sara’s walk to it is zero, and she still cannot sit.",
-    },
-    {
-      title: "Each student has a closest free auto",
-      body: plan.nearest.map((row) => `${row.student.name}: ${row.bestFree.driver.name} at ${row.bestFree.score.pickupKm.toFixed(2)} km`).join(". ") + ". Kabir and Sara both want Auto 3. Aarav is much closer to Auto 1 than Sara is.",
-    },
-    {
-      title: "Three offers. Sara waits.",
-      body: `${[...plan.offerByStudent.values()].map((match) => `${match.request.studentName} gets ${match.driver.name}, ${match.score.pickupKm.toFixed(2)} km`).join(". ")}. Sara is not offered an auto. Giving Auto 3 to her would take it from Kabir, who is 0.13 km away instead of her 0.40 km. The assignment is the one with the smallest total pickup.`,
-    },
-  ];
-
-  return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <p className="max-w-3xl text-lg text-gray-600">
-        Four students ask together. Three autos are free and one is full. Press Start, then step through what the assignment does.
-      </p>
-      <div className="mt-6 overflow-hidden rounded-3xl bg-white shadow-sm">
-        <FleetMap
-          fitKey={started ? `dispatch-${step}` : "dispatch-wait"}
-          drivers={[
-            { id: "auto-1", name: "Auto 1", lat: NEERAM.lat, lng: NEERAM.lng, badge: "Auto 1", detail: "Neeram · empty", color: "#111827", dy: 28, dx: -28 },
-            { id: "auto-2", name: "Auto 2", lat: AUDI.lat, lng: AUDI.lng, badge: "Auto 2", detail: "Auditorium · empty", color: "#9a3412", dy: 28, dx: 24 },
-            { id: "auto-3", name: "Auto 3", lat: LIBRARY.lat, lng: LIBRARY.lng, badge: "Auto 3", detail: "Library · empty", color: "#166534", dy: 26, dx: 36 },
-            { id: "auto-4", name: "Auto 4", lat: AGIRA.lat, lng: AGIRA.lng, badge: "Auto 4", detail: "Agira · 4 of 4", color: "#9ca3af", dy: 30, dx: -46 },
-          ]}
-          students={[
-            { id: "aarav", name: "Aarav", lat: PRITHVI.lat, lng: PRITHVI.lng, badge: "Aarav", detail: "Prithvi → Library", color: "#1d4ed8", dy: -20, dx: 18 },
-            { id: "mehak", name: "Mehak", lat: EBLOCK.lat, lng: EBLOCK.lng, badge: "Mehak", detail: "E Block → Auditorium", color: "#1d4ed8", dy: -20, dx: 10 },
-            { id: "kabir", name: "Kabir", lat: TAN.lat, lng: TAN.lng, badge: "Kabir", detail: "TAN → Library", color: "#1d4ed8", dy: -22, dx: -20 },
-            { id: "sara", name: "Sara", lat: AGIRA.lat, lng: AGIRA.lng, badge: "Sara", detail: "Agira → Auditorium", color: "#1d4ed8", dy: -22, dx: 36 },
-          ]}
-          links={links}
-        />
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-4">
-        <p className="text-sm text-gray-500">{started ? `Step ${step + 1} of ${steps.length}` : "Start to walk the assignment."}</p>
-        <div className="flex gap-2">
-          <button
-            className="rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
-            disabled={!started || step === 0}
-            onClick={() => setStep((value) => Math.max(0, value - 1))}
-          >
-            Back
-          </button>
-          <button
-            className="rounded-full bg-[#1c1917] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-            disabled={!started || step === steps.length - 1}
-            onClick={() => setStep((value) => Math.min(steps.length - 1, value + 1))}
-          >
-            Next
-          </button>
-        </div>
-      </div>
-      {started && (
-        <article className="mt-4 rounded-3xl bg-white p-6 shadow-sm">
-          <h2 className="text-2xl font-semibold">{steps[step].title}</h2>
-          <p className="mt-3 max-w-3xl text-base leading-7 text-gray-600">{steps[step].body}</p>
-        </article>
-      )}
-      {started && step === 3 && (
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          {plan.students.map((student) => {
-            const offer = plan.offerByStudent.get(student.id);
-            return (
-              <div key={student.id} className={`rounded-2xl p-4 ${offer ? "bg-[#1c1917] text-white" : "bg-white text-gray-900 shadow-sm"}`}>
-                <p className="text-sm opacity-70">{student.from}</p>
-                <p className="mt-1 text-xl font-semibold">{student.name}</p>
-                <p className="mt-3 text-sm">{offer ? `${offer.driver.name} · ${offer.score.pickupKm.toFixed(2)} km` : "No auto. All three were better for someone else."}</p>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      <AlgoDrawer
-        title="How the offers were chosen"
-        rows={[
-          { label: "Algorithm", value: "The Hungarian assignment. Every free auto is scored against every student, then one global matching is chosen so the sum of pickup costs is as small as possible. It is not first-come, first-served." },
-          { label: "The complication", value: "Auto 4 is full, so Sara’s nearest vehicle is impossible. Auto 3 is the closest free auto for both Kabir (0.13 km) and Sara (0.40 km). Only one of them can have it." },
-          { label: "The result", value: "Aarav gets Auto 1 (0.10 km), Mehak gets Auto 2 (0.22 km), Kabir gets Auto 3 (0.13 km). Sara has no offer. The three offers add up to 0.45 km of pickup." },
-          { label: "Why not give Sara the auto", value: "If Sara took Auto 3, Kabir would need a farther auto and the total pickup would be worse. The matching keeps the seat for the student it saves more distance for." },
-          { label: "Same timestamp", value: "All four requests share one timestamp, so arrival order never picks a winner. The costs do." },
-        ]}
-      />
-    </main>
-  );
 }
 
 const SAME_SPOT = shift(AGIRA, 0, 240);
