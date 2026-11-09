@@ -2,10 +2,23 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { toast } from "sonner";
+import DemoRideMap from "@/components/DemoRideMap";
 import FleetMap from "@/components/FleetMap";
 import { bookProductionRide, setRideStatus, watchRides, type StoredRide } from "@/adapters/production/rides";
 import { auth, getUserData, updateUserProfile } from "@/lib/firebase";
 import { CAMPUS_PLACES } from "@/lib/campus";
+import {
+  DEMO_DRIVER,
+  DEMO_STUDENT,
+  demoBook,
+  demoRole,
+  demoSetStatus,
+  leaveDemo,
+  readDemo,
+  subscribeDemo,
+  type DemoDriver,
+  type DemoRide,
+} from "@/lib/demoAccounts";
 
 const STEPS = ["REQUESTED", "OFFERED", "ACCEPTED", "OTP_VERIFIED", "IN_PROGRESS", "COMPLETED"];
 
@@ -22,8 +35,22 @@ export default function StudentDashboard() {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [demoDriver, setDemoDriver] = useState<DemoDriver>(() => readDemo().driver);
+  const demo = demoRole() === "student";
 
   useEffect(() => {
+    if (demo) {
+      setName(DEMO_STUDENT.name);
+      setRoll(DEMO_STUDENT.roll);
+      setHostel(DEMO_STUDENT.hostel);
+      setEmail(DEMO_STUDENT.email);
+      setPickup("agira-hall");
+      setDrop("library");
+      return subscribeDemo((state) => {
+        setRides(state.rides);
+        setDemoDriver(state.driver);
+      });
+    }
     const user = auth.currentUser;
     if (!user) {
       navigate("/auth/student");
@@ -41,20 +68,30 @@ export default function StudentDashboard() {
       setEmail(profile?.email || user.email || "");
     });
     return watchRides("studentId", user.uid, setRides);
-  }, [navigate]);
+  }, [navigate, demo]);
 
   const active = rides.find((ride) => !["COMPLETED", "CANCELLED", "REJECTED", "EXPIRED"].includes(ride.status));
+  const shownRide = (active ?? rides.find((ride) => ride.status === "COMPLETED")) as DemoRide | undefined;
   const pickupPlace = CAMPUS_PLACES.find((place) => place.id === pickup) ?? CAMPUS_PLACES[0];
   const dropPlace = CAMPUS_PLACES.find((place) => place.id === drop) ?? CAMPUS_PLACES[3];
 
   async function book(event: FormEvent) {
     event.preventDefault();
-    const user = auth.currentUser;
-    if (!user) return;
     if (pickup === drop) {
       toast.error("Choose two different places");
       return;
     }
+    if (demo) {
+      const result = demoBook({
+        pickup: { ...pickupPlace, label: pickupPlace.name },
+        drop: { ...dropPlace, label: dropPlace.name },
+        pooled,
+      });
+      setNotice(result.saved === false ? result.message : result.ride.reasons[0]);
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) return;
     setBusy(true);
     setNotice("");
     try {
@@ -79,6 +116,11 @@ export default function StudentDashboard() {
   }
 
   async function saveProfile() {
+    if (demo) {
+      setEditing(false);
+      toast.success("Profile saved on this demo");
+      return;
+    }
     const user = auth.currentUser;
     if (!user) return;
     await updateUserProfile(user.uid, { name, roll, hostel });
@@ -94,7 +136,14 @@ export default function StudentDashboard() {
             <p className="text-sm text-gray-500">Campus Ride</p>
             <h1 className="text-2xl font-semibold">Good day, {name || "student"}</h1>
           </div>
-          <button className="rounded-full border px-4 py-2 text-sm" onClick={() => void signOut(auth).then(() => navigate("/"))}>Log out</button>
+          <button className="rounded-full border px-4 py-2 text-sm" onClick={() => {
+            if (demo) {
+              leaveDemo();
+              navigate("/");
+              return;
+            }
+            void signOut(auth).then(() => navigate("/"));
+          }}>Log out</button>
         </div>
       </header>
       <main className="mx-auto grid max-w-6xl gap-6 px-6 py-6 lg:grid-cols-[1fr_1fr]">
@@ -141,11 +190,23 @@ export default function StudentDashboard() {
 
         <section className="space-y-4">
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-            <FleetMap
-              drivers={active?.driverId ? [{ id: active.driverId, name: "Assigned auto", lat: active.pickup.lat, lng: active.pickup.lng, status: "assigned" }] : []}
-              students={[{ id: "me", name: "Pickup", lat: pickupPlace.lat, lng: pickupPlace.lng }]}
-              rides={active ? [active] : []}
-            />
+            {demo && shownRide ? (
+              <DemoRideMap ride={shownRide} parked={demoDriver} />
+            ) : (
+              <FleetMap
+                drivers={active?.driverId ? [{
+                  id: active.driverId,
+                  name: "Assigned auto",
+                  lat: active.pickup.lat,
+                  lng: active.pickup.lng,
+                  status: "assigned",
+                  badge: "Auto",
+                  detail: "Assigned",
+                }] : []}
+                students={[{ id: "me", name: "Pickup", lat: active ? active.pickup.lat : pickupPlace.lat, lng: active ? active.pickup.lng : pickupPlace.lng, badge: "Pickup" }]}
+                rides={active ? [active] : []}
+              />
+            )}
           </div>
           <article className="rounded-xl border border-gray-200 bg-white p-5">
             <h2 className="font-semibold">Current ride</h2>
@@ -153,9 +214,11 @@ export default function StudentDashboard() {
             {active && (
               <div className="mt-3 text-sm">
                 <p>{active.pickupLabel} to {active.dropLabel}</p>
-                <p className="mt-1 text-gray-600">Fare ₹{active.fare} · {active.driverId ? `Driver ${active.driverId.slice(-6)}` : "Waiting for a driver"}</p>
-                {active.etaMin !== undefined && <p className="mt-1 text-gray-600">Estimated pickup {active.etaMin.toFixed(1)} min</p>}
-                {active.otp && <p className="mt-2 font-medium">OTP {active.otp}</p>}
+                <p className="mt-1 text-gray-600">Fare ₹{active.fare} · {active.driverId ? (demo ? `${DEMO_DRIVER.name} · ${DEMO_DRIVER.plate}` : `Driver ${active.driverId.slice(-6)}`) : "Waiting for a driver"}</p>
+                {active.etaMin !== undefined && ["REQUESTED", "OFFERED", "ACCEPTED"].includes(active.status) && <p className="mt-1 text-gray-600">Estimated pickup {active.etaMin.toFixed(1)} min</p>}
+                {active.otp && ["REQUESTED", "OFFERED", "ACCEPTED"].includes(active.status) && <p className="mt-3 text-3xl font-semibold tracking-[0.2em]">OTP {active.otp}</p>}
+                {demo && active.otp && ["REQUESTED", "OFFERED", "ACCEPTED"].includes(active.status) && <p className="mt-1 text-gray-500">Share this code with {DEMO_DRIVER.name}. You stay at the pickup until he checks it.</p>}
+                {demo && ["OTP_VERIFIED", "IN_PROGRESS"].includes(active.status) && <p className="mt-3 text-gray-700">You are seated with {DEMO_DRIVER.name.split(" ")[0]}. The auto takes you both to {active.dropLabel}.</p>}
                 <ol className="mt-4 space-y-1">
                   {STEPS.map((step) => (
                     <li key={step} className={step === active.status ? "font-semibold text-[#7B0000]" : "text-gray-500"}>{step.replace(/_/g, " ")}</li>
@@ -163,10 +226,10 @@ export default function StudentDashboard() {
                 </ol>
                 {active.reasons[0] && <p className="mt-3 text-gray-600">{active.reasons[0]}</p>}
                 {active.status === "PENDING_REASSIGNMENT" && (
-                  <button className="mt-4 rounded-lg border px-3 py-2" onClick={() => void setRideStatus(active, "CANCELLED")}>Clear and book again</button>
+                  <button className="mt-4 rounded-lg border px-3 py-2" onClick={() => void (demo ? demoSetStatus(active as DemoRide, "CANCELLED") : setRideStatus(active, "CANCELLED"))}>Clear and book again</button>
                 )}
                 {["REQUESTED", "OFFERED", "ACCEPTED"].includes(active.status) && (
-                  <button className="mt-4 rounded-lg border px-3 py-2" onClick={() => void setRideStatus(active, "CANCELLED")}>Cancel ride</button>
+                  <button className="mt-4 rounded-lg border px-3 py-2" onClick={() => void (demo ? demoSetStatus(active as DemoRide, "CANCELLED") : setRideStatus(active, "CANCELLED"))}>Cancel ride</button>
                 )}
               </div>
             )}

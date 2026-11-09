@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/store/AuthContext";
 import { authErrorMessage } from "@/lib/firebase";
+import { DEMO_STUDENT, enterDemo } from "@/lib/demoAccounts";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -148,6 +149,17 @@ export default function StudentAuth() {
               </span>
             </button>
           </div>
+          <button
+            type="button"
+            className="mt-4 w-full rounded-xl border border-[#AA0000] py-3 text-sm font-semibold text-[#AA0000]"
+            onClick={() => {
+              enterDemo("student");
+              navigate("/student");
+            }}
+          >
+            Demo student · {DEMO_STUDENT.name}
+          </button>
+          <p className="mt-2 text-center text-xs text-gray-500">Looks like a live booking. No Firebase account is created.</p>
         </div>
       </motion.div>
     </div>

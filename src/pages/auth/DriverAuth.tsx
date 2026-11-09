@@ -11,6 +11,7 @@ import { toast } from "sonner";
 
 import { useAuth } from "@/store/AuthContext";
 import { authErrorMessage } from "@/lib/firebase";
+import { DEMO_DRIVER, enterDemo } from "@/lib/demoAccounts";
 
 export default function DriverAuth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -152,6 +153,17 @@ export default function DriverAuth() {
               </span>
             </button>
           </div>
+          <button
+            type="button"
+            className="mt-4 w-full rounded-xl border border-[#AA0000] py-3 text-sm font-semibold text-[#AA0000]"
+            onClick={() => {
+              enterDemo("driver");
+              navigate("/driver");
+            }}
+          >
+            Demo driver · {DEMO_DRIVER.name}
+          </button>
+          <p className="mt-2 text-center text-xs text-gray-500">Open this beside the student demo. No Firebase account is created.</p>
         </div>
       </motion.div>
     </div>
