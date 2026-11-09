@@ -217,7 +217,8 @@ export default function StudentDashboard() {
                 <p className="mt-1 text-gray-600">Fare ₹{active.fare} · {active.driverId ? (demo ? `${DEMO_DRIVER.name} · ${DEMO_DRIVER.plate}` : `Driver ${active.driverId.slice(-6)}`) : "Waiting for a driver"}</p>
                 {active.etaMin !== undefined && ["REQUESTED", "OFFERED", "ACCEPTED"].includes(active.status) && <p className="mt-1 text-gray-600">Estimated pickup {active.etaMin.toFixed(1)} min</p>}
                 {active.otp && ["REQUESTED", "OFFERED", "ACCEPTED"].includes(active.status) && <p className="mt-3 text-3xl font-semibold tracking-[0.2em]">OTP {active.otp}</p>}
-                {demo && active.otp && ["REQUESTED", "OFFERED", "ACCEPTED"].includes(active.status) && <p className="mt-1 text-gray-500">Share this code with {DEMO_DRIVER.name}. You stay at the pickup until he checks it.</p>}
+                {demo && active.status === "OFFERED" && <p className="mt-1 text-gray-500">{DEMO_DRIVER.name.split(" ")[0]} has the request. He stays parked until he accepts.</p>}
+                {demo && active.status === "ACCEPTED" && <p className="mt-1 text-gray-500">He accepted and is on the way. Share the OTP when he reaches you.</p>}
                 {demo && ["OTP_VERIFIED", "IN_PROGRESS"].includes(active.status) && <p className="mt-3 text-gray-700">You are seated with {DEMO_DRIVER.name.split(" ")[0]}. The auto takes you both to {active.dropLabel}.</p>}
                 <ol className="mt-4 space-y-1">
                   {STEPS.map((step) => (

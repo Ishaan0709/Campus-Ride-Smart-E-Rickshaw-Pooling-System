@@ -221,19 +221,30 @@ const TRIP_MS = 14000;
 export function demoScene(ride: DemoRide, driver: DemoDriver): DemoScene {
   const origin = ride.origin ?? { lat: driver.lat, lng: driver.lng };
   const first = ride.studentName.split(" ")[0];
-  const coming = ride.status === "REQUESTED" || ride.status === "OFFERED" || ride.status === "ACCEPTED";
-  if (coming) {
-    const start = ride.offeredAt ?? ride.createdAt;
+  const driverName = DEMO_DRIVER.name.split(" ")[0];
+  if (ride.status === "REQUESTED" || ride.status === "OFFERED") {
+    return {
+      driver: origin,
+      student: ride.pickup,
+      aboard: false,
+      title: `${driverName} has not accepted yet`,
+      detail: `${first} called from ${ride.pickupLabel}. ${driverName} stays where he is until he accepts.`,
+      trailFrom: origin,
+      headingTo: ride.pickup,
+    };
+  }
+  if (ride.status === "ACCEPTED") {
+    const start = ride.acceptedAt ?? Date.now();
     const t = Math.min(1, (Date.now() - start) / APPROACH_MS);
     const at = lerp(origin, ride.pickup, t);
     return {
       driver: at,
       student: ride.pickup,
       aboard: false,
-      title: t >= 1 ? `${DEMO_DRIVER.name.split(" ")[0]} is at ${ride.pickupLabel}` : `${DEMO_DRIVER.name.split(" ")[0]} is driving to ${ride.pickupLabel}`,
+      title: t >= 1 ? `${driverName} is at ${ride.pickupLabel}` : `${driverName} accepted and is driving to ${ride.pickupLabel}`,
       detail: t >= 1
         ? `${ride.studentName} is waiting outside. The OTP is how she gets into the auto.`
-        : `${first} is still at the pickup. The seat is empty until the code matches.`,
+        : `${first} is still at the pickup. He only started after accepting.`,
       trailFrom: origin,
       headingTo: ride.pickup,
     };

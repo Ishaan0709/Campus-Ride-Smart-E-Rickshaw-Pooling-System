@@ -205,6 +205,7 @@ export default function DriverDashboard() {
                 <p className="font-medium">{offer.studentName}</p>
                 <p className="mt-1">{offer.pickupLabel} to {offer.dropLabel}</p>
                 <p className="mt-1 text-gray-600">{offer.reasons[0]}</p>
+                {demo && <p className="mt-2 text-gray-700">You are still parked. Accept, and only then drive to {offer.pickupLabel}.</p>}
                 <div className="mt-4 flex gap-2">
                   <button className="rounded-lg bg-[#7B0000] px-4 py-2 text-white" onClick={() => void changeStatus(offer, "ACCEPTED")}>Accept</button>
                   <button className="rounded-lg border px-4 py-2" onClick={() => void changeStatus(offer, "REJECTED")}>Reject</button>
